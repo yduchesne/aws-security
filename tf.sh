@@ -19,10 +19,12 @@ ENVIRONMENT_FILE=""
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 BOOTSTRAP_DIR="${SCRIPT_DIR}/terraform/bootstrap"
 IDENTITY_CENTER_DIR="${SCRIPT_DIR}/terraform/identity_center"
+WORKLOAD_ACCESS_DIR="${SCRIPT_DIR}/terraform/identity_center/workload_access"
 AFT_ACCESS_DIR="${SCRIPT_DIR}/terraform/identity_center/aft_access"
 AFT_ORG_UNIT_DIR="${SCRIPT_DIR}/terraform/aft/org_unit"
 AFT_ACCOUNT_DIR="${SCRIPT_DIR}/terraform/aft/account"
 AFT_PLATFORM_DIR="${SCRIPT_DIR}/terraform/aft/platform"
+WORKLOAD_ORG_UNITS_DIR="${SCRIPT_DIR}/terraform/workloads/org_units"
 
 ###############################################################################
 # Functions
@@ -30,12 +32,12 @@ AFT_PLATFORM_DIR="${SCRIPT_DIR}/terraform/aft/platform"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --phase <bootstrap|identity-center|aft> [OPTIONS]
+Usage: $(basename "$0") --phase <bootstrap|identity-center|aft|workloads> [OPTIONS]
 
 Run a Terraform phase for the AWS Control Tower landing zone.
 
 Required:
-  --phase PHASE  Phase to run: bootstrap, identity-center, or aft
+  --phase PHASE  Phase to run: bootstrap, identity-center, aft, or workloads
 
 Operations:
   --apply        Run 'terraform apply' in each selected Terraform root
@@ -44,11 +46,18 @@ Operations:
   --chk          Run 'terraform fmt -check -recursive' before plan/apply, or by itself
   -h, --help     Display this help message
 
+The identity-center phase runs these independent roots in order:
+  1. terraform/identity_center
+  2. terraform/identity_center/workload_access
+
 The AFT phase runs these independent roots in order:
   1. terraform/aft/org_unit
   2. terraform/aft/account
   3. terraform/identity_center/aft_access
   4. terraform/aft/platform
+
+The workloads phase runs terraform/workloads/org_units after bootstrap and
+before AFT account requests target the workload environment OUs.
 
 Examples:
   $(basename "$0") --phase bootstrap --dry-run
@@ -56,6 +65,7 @@ Examples:
   $(basename "$0") --phase identity-center --dry-run
   $(basename "$0") --phase aft --dry-run
   $(basename "$0") --phase aft --chk --apply
+  $(basename "$0") --phase workloads --dry-run
 EOF
 }
 
@@ -120,6 +130,9 @@ backend_bucket_for_root() {
     identity-center-aft-access)
       printf '%s' "${TF_IDENTITY_CENTER_AFT_ACCESS_STATE_BUCKET:-${TF_IDENTITY_CENTER_STATE_BUCKET:-${TF_STATE_BUCKET:-}}}"
       ;;
+    identity-center-workload-access)
+      printf '%s' "${TF_IDENTITY_CENTER_WORKLOAD_ACCESS_STATE_BUCKET:-${TF_IDENTITY_CENTER_STATE_BUCKET:-${TF_STATE_BUCKET:-}}}"
+      ;;
     aft-org-unit)
       printf '%s' "${TF_AFT_ORG_UNIT_STATE_BUCKET:-${TF_AFT_STATE_BUCKET:-${TF_STATE_BUCKET:-}}}"
       ;;
@@ -128,6 +141,9 @@ backend_bucket_for_root() {
       ;;
     aft-platform)
       printf '%s' "${TF_AFT_PLATFORM_STATE_BUCKET:-${TF_AFT_STATE_BUCKET:-${TF_STATE_BUCKET:-}}}"
+      ;;
+    workload-org-units)
+      printf '%s' "${TF_WORKLOAD_ORG_UNITS_STATE_BUCKET:-${TF_STATE_BUCKET:-}}"
       ;;
     *)
       die "Unknown Terraform root name '${root_name}'."
@@ -148,6 +164,9 @@ backend_region_for_root() {
     identity-center-aft-access)
       printf '%s' "${TF_IDENTITY_CENTER_AFT_ACCESS_STATE_REGION:-${TF_IDENTITY_CENTER_STATE_REGION:-${TF_STATE_REGION:-}}}"
       ;;
+    identity-center-workload-access)
+      printf '%s' "${TF_IDENTITY_CENTER_WORKLOAD_ACCESS_STATE_REGION:-${TF_IDENTITY_CENTER_STATE_REGION:-${TF_STATE_REGION:-}}}"
+      ;;
     aft-org-unit)
       printf '%s' "${TF_AFT_ORG_UNIT_STATE_REGION:-${TF_AFT_STATE_REGION:-${TF_STATE_REGION:-}}}"
       ;;
@@ -156,6 +175,9 @@ backend_region_for_root() {
       ;;
     aft-platform)
       printf '%s' "${TF_AFT_PLATFORM_STATE_REGION:-${TF_AFT_STATE_REGION:-${TF_STATE_REGION:-}}}"
+      ;;
+    workload-org-units)
+      printf '%s' "${TF_WORKLOAD_ORG_UNITS_STATE_REGION:-${TF_STATE_REGION:-}}"
       ;;
     *)
       die "Unknown Terraform root name '${root_name}'."
@@ -175,11 +197,11 @@ run_terraform_root() {
   backend_region="$(backend_region_for_root "$root_name")"
 
   if [[ -z "${backend_bucket//[[:space:]]/}" ]]; then
-    die "No backend bucket is configured for '${root_name}'. Set its root-specific variable, TF_AFT_STATE_BUCKET, or TF_STATE_BUCKET."
+    die "No backend bucket is configured for '${root_name}'. Set its root-specific backend variable or TF_STATE_BUCKET."
   fi
 
   if [[ -z "${backend_region//[[:space:]]/}" ]]; then
-    die "No backend Region is configured for '${root_name}'. Set its root-specific variable, TF_AFT_STATE_REGION, or TF_STATE_REGION."
+    die "No backend Region is configured for '${root_name}'. Set its root-specific backend variable or TF_STATE_REGION."
   fi
 
   log "Running Terraform root: ${root_name} (${root_dir})"
@@ -289,6 +311,23 @@ run_identity_center_phase() {
   # shellcheck disable=SC1090
   source "$prerequisite_script"
   run_terraform_root identity-center "$IDENTITY_CENTER_DIR"
+
+  prerequisite_script="${WORKLOAD_ACCESS_DIR}/load-prerequisite-env.sh"
+  [[ -f "$prerequisite_script" ]] || die "Prerequisite script not found: ${prerequisite_script}"
+  log "Loading prerequisites for identity_center/workload_access"
+  # shellcheck disable=SC1090
+  source "$prerequisite_script"
+  run_terraform_root identity-center-workload-access "$WORKLOAD_ACCESS_DIR"
+}
+
+run_workloads_phase() {
+  local prerequisite_script="${WORKLOAD_ORG_UNITS_DIR}/load-prerequisite-env.sh"
+
+  [[ -f "$prerequisite_script" ]] || die "Prerequisite script not found: ${prerequisite_script}"
+  log "Loading prerequisites for workloads/org_units"
+  # shellcheck disable=SC1090
+  source "$prerequisite_script"
+  run_terraform_root workload-org-units "$WORKLOAD_ORG_UNITS_DIR"
 }
 
 run_aft_phase() {
@@ -339,7 +378,7 @@ run_aft_phase() {
 while (($#)); do
   case "$1" in
     --phase)
-      (($# >= 2)) || die "--phase requires a value: bootstrap, identity-center, or aft."
+      (($# >= 2)) || die "--phase requires a value: bootstrap, identity-center, aft, or workloads."
       PHASE="$2"
       shift 2
       ;;
@@ -373,8 +412,8 @@ while (($#)); do
   esac
 done
 
-[[ "$PHASE" == "bootstrap" || "$PHASE" == "identity-center" || "$PHASE" == "aft" ]] ||
-  die "--phase must be set to 'bootstrap', 'identity-center', or 'aft'."
+[[ "$PHASE" == "bootstrap" || "$PHASE" == "identity-center" || "$PHASE" == "aft" || "$PHASE" == "workloads" ]] ||
+  die "--phase must be set to 'bootstrap', 'identity-center', 'aft', or 'workloads'."
 
 if [[ "$APPLY" == true && "$DRY_RUN" == true ]]; then
   die "--apply and --dry-run are mutually exclusive."
@@ -409,5 +448,8 @@ case "$PHASE" in
     ;;
   aft)
     run_aft_phase
+    ;;
+  workloads)
+    run_workloads_phase
     ;;
 esac

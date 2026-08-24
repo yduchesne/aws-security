@@ -9,6 +9,7 @@ The root runs after the Control Tower landing zone and its IAM Identity Center i
 ```text
 terraform/bootstrap
   → terraform/identity_center
+  → terraform/identity_center/workload_access
   → terraform/aft/org_unit
   → terraform/aft/account
   → terraform/identity_center/aft_access
@@ -28,6 +29,20 @@ It creates only project-specific resources with distinct names:
 | `AWSAccessAssignmentAdmins` | `AccessAssignmentAdministration` | Account assignments using existing permission sets |
 
 Terraform discovers the existing organization Identity Center instance and identity store. It does not create or manage the instance itself.
+
+A separate state root, `terraform/identity_center/workload_access/`, creates the project-owned workload access catalog:
+
+| Group | Permission set | Approved assignment scope |
+|---|---|---|
+| `WorkloadViewers` | `WorkloadViewOnly` | Dev, Test, and Prod workload accounts |
+| `WorkloadSecurityAuditors` | `WorkloadSecurityAudit` | Dev, Test, and Prod workload accounts |
+| `WorkloadDevelopers` | `WorkloadDeveloper` | Dev workload accounts only |
+| `WorkloadTestOperators` | `WorkloadTestOperator` | Test workload accounts only |
+| `WorkloadProductionOperators` | `WorkloadProductionOperator` | Prod workload accounts only |
+
+The root creates two named test-user records from `TF_VAR_test_user1_*` and `TF_VAR_test_user2_*`. It intentionally creates no memberships or direct assignments for them; access-portal activation, credentials, MFA, and temporary console-test memberships are manual operations. Its assignment map defaults to empty until AFT-created account IDs are known, and lifecycle preconditions enforce the approved group, permission-set, and environment matrix. Workload assignments cannot target the Organizations management account.
+
+`WorkloadDeveloper` attaches `PowerUserAccess` but uses an explicit deny boundary for IAM, Organizations, Identity Center, Control Tower, account administration, and sensitive governance mutations. Test and Production operator permission sets are read-only by default; operational write actions must be listed explicitly, and wildcard actions are rejected. These permission sets carry `AssignmentDelegation = Allowed`, so changes to their policies and assignments require the independent review controls described below.
 
 A separate state root, `terraform/identity_center/aft_access/`, creates project-owned AFT human access after Account Factory completes:
 
@@ -102,7 +117,7 @@ AWSServiceCatalogAdmins
 
 The Control Tower groups are discovered through data sources; Terraform does not take ownership of them.
 
-`AFTPlatformAdministrators` is created later in a separate state root and is not currently included in the parent root's exact group-ARN deny. Membership changes to that group still require procedural independent approval, CloudTrail monitoring, and periodic Terraform reconciliation. A future central protected-group registry or reviewed automation workflow should close this remaining gap.
+`AFTPlatformAdministrators` and the workload access groups are created later in separate state roots and are not currently included in the parent root's exact group-ARN deny. Membership changes to those groups still require procedural independent approval, CloudTrail monitoring, and periodic Terraform reconciliation. A future central protected-group registry or reviewed automation workflow should close this remaining gap.
 
 ## Protection of Administrative Permission Sets
 
@@ -117,6 +132,14 @@ SecurityBoundary = Protected
 `AWSPermissionSetAdmins` is explicitly denied policy, boundary, tag, update, and deletion operations when this resource tag is present. This protects its own permission set, the other two central administrative permission sets, and `AFTPlatformAdministration` without requiring cross-state ARN references.
 
 The permission-set administrator can still create a powerful unprotected permission set. It cannot assign that permission set, but it can mark it `AssignmentDelegation = Allowed`; collusion with the assignment administrator remains a residual path. The strongest future control is to remove high-risk interactive writes and manage protected or delegated permission sets through a reviewed CI/CD workflow whose role cannot modify itself.
+
+## Workload Access Risks
+
+The delegated workload permission sets are intentionally assignable in member accounts and therefore are not tagged `SecurityBoundary = Protected`; the existing access-assignment administrator would otherwise deny their assignment. The permission-set administrator can modify these definitions, the identity administrator can modify workload group memberships, and the assignment administrator can assign approved delegated permission sets. Independent review, CloudTrail monitoring, and Terraform reconciliation remain required to detect policy, membership, or assignment escalation.
+
+The manually operated test users are intentionally outside Terraform membership management. Temporary membership will therefore not be reconciled automatically. Keep both users out of groups by default, prohibit management-account and AFT assignments, document each temporary grant, remove it immediately after testing, and review their live access regularly.
+
+`PowerUserAccess` is broad even with the explicit governance denies. Use it only in Dev accounts, keep the deny policy under review as AWS managed policies evolve, and replace it with application-specific permissions when workload requirements are known. Test and Production operational writes start empty and must remain explicit. The configured action lists cannot express resource scoping, so actions that require sensitive resource-level restrictions should instead be delivered through application-specific roles and policies.
 
 ## AFT Platform Administration Risks
 

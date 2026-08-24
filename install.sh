@@ -17,6 +17,7 @@ set -euo pipefail
 readonly UV_VERSION="0.12.5"
 readonly PRE_COMMIT_VERSION="4.6.2"
 readonly CHECKOV_VERSION="3.3.13"
+readonly GITLEAKS_VERSION="8.24.2"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 PYPROJECT_FILE="${SCRIPT_DIR}/pyproject.toml"
@@ -44,9 +45,13 @@ Idempotently configure this repository's local tooling:
   - install jq and AWS CLI v2 when missing;
   - install uv ${UV_VERSION} when uv is missing;
   - create pyproject.toml when missing;
-  - install pre-commit ${PRE_COMMIT_VERSION} and Checkov ${CHECKOV_VERSION};
+  - install pre-commit ${PRE_COMMIT_VERSION}, Checkov ${CHECKOV_VERSION}, and Gitleaks ${GITLEAKS_VERSION};
   - create the repository pre-commit configuration when missing;
-  - install the Git pre-commit hook when missing.
+  - install the Git pre-commit hook when missing;
+  - run every configured pre-commit check against all tracked files.
+
+Gitleaks is installed idempotently into ${HOME}/.local/bin and is also
+configured as a pinned pre-commit hook.
 
 The script supports Linux and may request sudo only for missing system packages.
 EOF
@@ -264,6 +269,81 @@ ensure_uv_path() {
   fi
 }
 
+install_gitleaks_if_needed() {
+  local machine_arch
+  local gitleaks_arch
+  local temporary_dir
+  local archive_name
+  local archive_path
+  local checksums_path
+  local expected_checksum
+  local actual_checksum
+  local installed_version=""
+  local gitleaks_bin="${HOME}/.local/bin/gitleaks"
+
+  ensure_uv_path
+
+  if command -v gitleaks >/dev/null 2>&1; then
+    installed_version="$(gitleaks version 2>/dev/null || true)"
+  elif [[ -x "$gitleaks_bin" ]]; then
+    installed_version="$($gitleaks_bin version 2>/dev/null || true)"
+  fi
+
+  if [[ "$installed_version" == "$GITLEAKS_VERSION" ]]; then
+    log "Gitleaks ${GITLEAKS_VERSION} already installed; leaving it unchanged"
+    return
+  fi
+
+  machine_arch="$(uname -m)"
+  case "$machine_arch" in
+    x86_64|amd64)
+      gitleaks_arch="x64"
+      ;;
+    aarch64|arm64)
+      gitleaks_arch="arm64"
+      ;;
+    *)
+      die "Gitleaks official Linux releases are unsupported on architecture '${machine_arch}'."
+      ;;
+  esac
+
+  temporary_dir="$(mktemp -d)" || die "Unable to create a temporary directory for Gitleaks installation."
+  cleanup_gitleaks_installer() {
+    if [[ -n "${temporary_dir:-}" && -d "$temporary_dir" && "$temporary_dir" == /tmp/* ]]; then
+      rm -r -- "$temporary_dir"
+    fi
+  }
+  trap cleanup_gitleaks_installer EXIT
+
+  archive_name="gitleaks_${GITLEAKS_VERSION}_linux_${gitleaks_arch}.tar.gz"
+  archive_path="${temporary_dir}/${archive_name}"
+  checksums_path="${temporary_dir}/checksums.txt"
+
+  log "Gitleaks is missing or differs from ${GITLEAKS_VERSION}; downloading the official release"
+  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive_name}" \
+    --output "$archive_path"
+  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+    --output "$checksums_path"
+
+  expected_checksum="$(awk -v name="$archive_name" '$2 == name { print $1; exit }' "$checksums_path")"
+  [[ "$expected_checksum" =~ ^[[:xdigit:]]{64}$ ]] || die "The Gitleaks checksum file did not contain a valid checksum for ${archive_name}."
+  actual_checksum="$(sha256sum "$archive_path" | awk '{print $1}')"
+  [[ "$actual_checksum" == "$expected_checksum" ]] || die "Gitleaks archive checksum verification failed."
+
+  tar -xzf "$archive_path" -C "$temporary_dir" gitleaks
+  [[ -x "${temporary_dir}/gitleaks" ]] || die "The Gitleaks archive did not contain the expected executable."
+  install -Dm755 "${temporary_dir}/gitleaks" "$gitleaks_bin"
+  cleanup_gitleaks_installer
+  trap - EXIT
+  hash -r
+
+  [[ -x "$gitleaks_bin" ]] || die "Gitleaks installation did not create ${gitleaks_bin}."
+  [[ "$($gitleaks_bin version)" == "$GITLEAKS_VERSION" ]] || die "Unexpected Gitleaks version after installation: $($gitleaks_bin version)"
+  log "Gitleaks installation completed: ${GITLEAKS_VERSION}"
+}
+
 install_uv_if_needed() {
   local temporary_dir
   local installer
@@ -382,6 +462,9 @@ create_pre_commit_config_if_needed() {
     if ! grep -Eq '^[[:space:]]*-[[:space:]]+id:[[:space:]]+checkov[[:space:]]*$' "$PRE_COMMIT_CONFIG"; then
       die "Existing ${PRE_COMMIT_CONFIG} does not define the required Checkov hook; refusing to overwrite it."
     fi
+    if ! grep -Eq '^[[:space:]]*-[[:space:]]+id:[[:space:]]+gitleaks[[:space:]]*$' "$PRE_COMMIT_CONFIG"; then
+      die "Existing ${PRE_COMMIT_CONFIG} does not define the required Gitleaks hook; refusing to overwrite it."
+    fi
     return
   fi
 
@@ -400,6 +483,12 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+        name: Gitleaks secret scan
 
   - repo: local
     hooks:
@@ -441,10 +530,17 @@ install_pre_commit_hook_if_needed() {
   fi
 }
 
+run_pre_commit_checks() {
+  log "Running all pre-commit checks against tracked files"
+  uv run --frozen pre-commit run --all-files
+}
+
 verify_installation() {
   command -v jq >/dev/null 2>&1 || die "jq is not available after installation."
   command -v aws >/dev/null 2>&1 || die "AWS CLI is not available after installation."
   command -v uv >/dev/null 2>&1 || die "uv is not available after installation."
+  command -v gitleaks >/dev/null 2>&1 || die "Gitleaks is not available after installation."
+  [[ "$(gitleaks version)" == "$GITLEAKS_VERSION" ]] || die "Unexpected Gitleaks version: $(gitleaks version)"
   [[ "$(aws --version 2>&1)" =~ ^aws-cli/2\. ]] || die "AWS CLI v2 is required; found: $(aws --version 2>&1)"
   [[ -f "$PYPROJECT_FILE" ]] || die "Missing ${PYPROJECT_FILE}."
   [[ -f "${SCRIPT_DIR}/uv.lock" ]] || die "Missing ${SCRIPT_DIR}/uv.lock."
@@ -457,6 +553,7 @@ verify_installation() {
   printf 'uv:         %s\n' "$(uv --version)"
   printf 'pre-commit: %s\n' "$(uv run --frozen pre-commit --version)"
   printf 'checkov:    %s\n' "$(uv run --frozen checkov --version | head -n 1)"
+  printf 'gitleaks:   %s\n' "$(gitleaks version)"
   printf 'config:     %s\n' "$PRE_COMMIT_CONFIG"
   printf 'hook:       %s\n' "${SCRIPT_DIR}/.git/hooks/pre-commit"
 
@@ -470,10 +567,13 @@ verify_installation() {
 install_missing_native_tools
 install_aws_cli_v2_if_needed
 install_uv_if_needed
+install_gitleaks_if_needed
 create_pyproject_if_needed
 ensure_python_tools
 create_pre_commit_config_if_needed
 install_pre_commit_hook_if_needed
 verify_installation
+run_pre_commit_checks
 
+log "All installation checks completed successfully."
 log "Run all checks with: uv run --frozen pre-commit run --all-files"

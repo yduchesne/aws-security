@@ -23,15 +23,17 @@ The repository uses:
 |---|---|
 | `uv` | Python environment, dependency, and lock-file management |
 | `pre-commit` | Git hook orchestration |
+| Gitleaks | Detection of credentials and other sensitive data in source and staged changes |
 | Checkov | Static security analysis of project-owned Terraform |
 | `pre-commit-hooks` | Repository hygiene checks such as whitespace, line endings, merge markers, and private-key detection |
 
-The pinned tooling versions created by `install.sh` are currently:
+The pinned tooling versions installed or configured by `install.sh` are currently:
 
 ```text
 uv:         0.12.5
 pre-commit: 4.6.2
 Checkov:    3.3.13
+Gitleaks:   8.24.2
 ```
 
 Tool updates require a reviewed change to `pyproject.toml`, `uv.lock`, and any affected hook configuration.
@@ -50,16 +52,22 @@ The installer is idempotent. It:
 2. installs uv when absent;
 3. creates the standard `pyproject.toml` when absent;
 4. installs the pinned pre-commit and Checkov packages into `.venv`;
-5. generates or synchronizes `uv.lock`;
-6. creates `.pre-commit-config.yaml` when absent;
-7. installs `.git/hooks/pre-commit` when absent;
-8. validates the resulting environment.
+5. installs the pinned Gitleaks binary into `$HOME/.local/bin` when missing or outdated;
+6. generates or synchronizes `uv.lock`;
+7. creates `.pre-commit-config.yaml` when absent;
+8. installs `.git/hooks/pre-commit` when absent;
+9. validates the resulting environment;
+10. runs `uv run --frozen pre-commit run --all-files` and displays the result of every configured check.
 
-The installer places a user-local uv installation under:
+The installer places user-local uv and Gitleaks installations under:
 
 ```text
 $HOME/.local/bin
 ```
+
+Gitleaks installation is idempotent: an existing matching `8.24.2` binary is
+left unchanged; a missing or different version is replaced only after the
+official release archive's SHA-256 checksum has been verified.
 
 A child process cannot update the parent shell's environment. If uv is not immediately found after the first installation, run:
 
@@ -75,6 +83,10 @@ exec "$SHELL" -l
 
 The installer also adds an idempotent PATH entry to the applicable Bash, Zsh, or Fish startup configuration.
 
+The installer runs the complete pre-commit suite before it exits successfully,
+so its output includes Gitleaks and the remaining repository and Terraform
+checks. A failing hook causes the installer to fail.
+
 ## Version-Controlled Files
 
 Commit:
@@ -83,6 +95,7 @@ Commit:
 pyproject.toml
 uv.lock
 .pre-commit-config.yaml
+.gitleaks.toml
 ```
 
 Do not commit:
@@ -98,7 +111,27 @@ The `.venv/` directory is excluded by `.gitignore`.
 
 ## Pre-commit Hooks
 
-The generated `.pre-commit-config.yaml` includes standard hygiene checks:
+The repository `.pre-commit-config.yaml` includes Gitleaks and these standard hygiene checks:
+
+The Gitleaks hook is pinned to `v8.24.2` and uses the repository configuration in `.gitleaks.toml`:
+
+```yaml
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.24.2
+  hooks:
+    - id: gitleaks
+      name: Gitleaks secret scan
+```
+
+The explicit hook name makes the scan visible in installer and pre-commit output:
+
+```text
+Gitleaks secret scan.....................................................Passed
+```
+
+Gitleaks scans staged content during a normal commit and uses its default detection rules. The repository configuration should remain narrowly scoped; do not add broad source-directory exclusions to suppress findings.
+
+The standard hygiene checks are:
 
 ```text
 trailing-whitespace
@@ -110,9 +143,11 @@ check-added-large-files
 detect-private-key
 ```
 
-These checks reduce accidental formatting defects, unresolved merge markers, oversized commits, and obvious private-key exposure.
+These checks reduce accidental formatting defects, unresolved merge markers, oversized commits, obvious private-key exposure, and accidental credential or token exposure.
 
-`detect-private-key` is a useful guard but is not a complete secret scanner. Credentials, Terraform state, environment files, plans, account email addresses, and access tokens must still be reviewed before commit.
+`detect-private-key` is a useful guard but is not a complete secret scanner. Gitleaks provides the broader secret-detection layer, but it is still not a substitute for credential rotation or secure state handling. Credentials, Terraform state, environment files, plans, account email addresses, and access tokens must still be reviewed before commit.
+
+If Gitleaks finds a real credential, treat it as compromised: revoke or rotate it immediately, then clean the repository history as appropriate. Do not suppress a finding merely because the secret was later removed from the working tree.
 
 ## Checkov Integration
 
@@ -128,6 +163,12 @@ Git commit
 The hook uses:
 
 ```yaml
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.24.2
+  hooks:
+    - id: gitleaks
+      name: Gitleaks secret scan
+
 - repo: local
   hooks:
     - id: checkov
@@ -188,7 +229,9 @@ Checkov scans these project roots:
 terraform/bootstrap
 terraform/identity_center
 terraform/identity_center/aft_access
+terraform/identity_center/workload_access
 terraform/aft/org_unit
+terraform/workloads/org_units
 terraform/aft/account
 terraform/aft/platform
 ```
@@ -212,6 +255,12 @@ Run every hook against all tracked files:
 uv run --frozen pre-commit run --all-files
 ```
 
+Run only Gitleaks through pre-commit:
+
+```bash
+uv run --frozen pre-commit run gitleaks --all-files
+```
+
 Run only Checkov through pre-commit:
 
 ```bash
@@ -228,6 +277,18 @@ Validate the hook configuration:
 
 ```bash
 uv run --frozen pre-commit validate-config .pre-commit-config.yaml
+```
+
+Run a direct working-tree scan when investigating a finding:
+
+```bash
+gitleaks dir --config .gitleaks.toml --redact .
+```
+
+Scan repository history before enabling the check on an existing repository:
+
+```bash
+gitleaks git --config .gitleaks.toml --redact --verbose
 ```
 
 A hook may modify files, for example by removing trailing whitespace or adding a final newline. Review and stage those modifications before committing again.
