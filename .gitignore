@@ -1,0 +1,87 @@
+# -----------------------------------------------------------------------------
+# Terraform
+# -----------------------------------------------------------------------------
+
+# Local Terraform working directories
+**/.terraform/*
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform plan files
+*.tfplan
+*.tfplan.*
+
+# Terraform override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI configuration
+.terraformrc
+terraform.rc
+
+# -----------------------------------------------------------------------------
+# Variables / secrets
+# -----------------------------------------------------------------------------
+
+# Environment files / credentials
+.env
+.env.*
+!.env.example
+
+# -----------------------------------------------------------------------------
+# Sensitive files
+# -----------------------------------------------------------------------------
+
+*.pem
+*.key
+*.p12
+*.pfx
+
+# -----------------------------------------------------------------------------
+# IDE / editor
+# -----------------------------------------------------------------------------
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Operating system
+# -----------------------------------------------------------------------------
+
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Local tooling
+# -----------------------------------------------------------------------------
+
+.terraform.tfstate.lock.info
+.venv/
+
+# -----------------------------------------------------------------------------
+# Undesirable local directories
+# -----------------------------------------------------------------------------
+out/
+**/out/
+.bak/
+**/.bak/
+
+# -----------------------------------------------------------------------------
+# IMPORTANT:
+# Do NOT ignore .terraform.lock.hcl.
+#
+# It should normally be committed so that Terraform provider selections
+# are reproducible across developers and CI/CD environments.
+# -----------------------------------------------------------------------------
