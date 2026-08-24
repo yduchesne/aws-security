@@ -442,6 +442,26 @@ The intended future state is a reviewed Terraform workflow using OIDC-federated 
 
 See [`identity_center_security.md`](identity_center_security.md) for the detailed policy design, limitations, residual risks, and future mitigations.
 
+## Workload Access Catalog
+
+`terraform/identity_center/workload_access/` creates reusable project-owned groups and permission sets for workload accounts and two named test-user records from the `TF_VAR_test_user1_*` and `TF_VAR_test_user2_*` inputs. It does not modify Control Tower groups.
+
+| Group | Permission set | Account scope |
+|---|---|---|
+| `WorkloadViewers` | `WorkloadViewOnly` | Approved Dev, Test, and Prod accounts |
+| `WorkloadSecurityAuditors` | `WorkloadSecurityAudit` | Approved Dev, Test, and Prod accounts |
+| `WorkloadDevelopers` | `WorkloadDeveloper` | Approved Dev accounts only |
+| `WorkloadTestOperators` | `WorkloadTestOperator` | Approved Test accounts only |
+| `WorkloadProductionOperators` | `WorkloadProductionOperator` | Approved Prod accounts only |
+
+The test users intentionally have no Terraform-managed memberships or direct assignments. They are manually activated and operated for console testing; temporary access must be documented, must exclude the management and AFT accounts, and must be removed immediately after testing.
+
+The catalog can be created before workload accounts exist because its assignment map defaults to empty. After AFT creates and enrolls an account, a reviewed change adds its account ID and an allowed group, permission set, and environment combination to the central assignment map. AFT in-account customizations do not own these Identity Center resources.
+
+The Test and Production operator permission sets are read-only by default. Add only explicit reviewed actions after workload requirements are known. `WorkloadDeveloper` is based on `PowerUserAccess` with explicit denies for central identity, organization, account, Control Tower, and sensitive governance administration; it must never be assigned to Test or Prod.
+
+Use one named identity per human and reviewed group membership. For multiple application teams, introduce team-specific groups rather than assigning one organization-wide developer group to every Dev account.
+
 ## IAM Identity Center User for the AFT Account
 
 The `SSOUserEmail`, `SSOUserFirstName`, and `SSOUserLastName` parameters supplied to Control Tower Account Factory identify a human account owner or administrator.

@@ -8,6 +8,7 @@ The dependency sequence is:
 
 ```text
 terraform/bootstrap
+  → terraform/workloads/org_units
   → terraform/identity_center
   → terraform/aft/org_unit
   → terraform/aft/account
@@ -77,7 +78,9 @@ Every Terraform root has a distinct state key even when it uses the same S3 buck
 
 ```text
 control-tower/terraform.tfstate
+workloads/org_units/terraform.tfstate
 identity-center/terraform.tfstate
+identity-center/workload-access/terraform.tfstate
 aft/org_unit/terraform.tfstate
 aft/account/terraform.tfstate
 identity-center/aft-access/terraform.tfstate
@@ -100,7 +103,7 @@ The AFT VPC is intentionally disabled:
 export TF_VAR_aft_enable_vpc=false
 ```
 
-The baseline variable is validated at `5.0`. The AFT OU baseline also uses `prevent_destroy` to prevent an accidental version change from unregistering governance.
+The baseline variable is validated at `5.0`. The AFT OU baseline and all workload OU baselines use `prevent_destroy` to prevent an accidental version change from unregistering governance.
 
 ### AFT repositories
 
@@ -165,9 +168,35 @@ Control Tower operations are asynchronous. Do not start Identity Center administ
 
 A converged root should produce no changes, except for reviewed computed-state refreshes.
 
+## Workload OU Hierarchy
+
+After bootstrap is healthy, create and govern the workload account targets:
+
+```text
+Workloads
+├── Dev
+├── Test
+└── Prod
+```
+
+Plan the independent root:
+
+```bash
+./tf.sh --phase workloads --fmt --dry-run
+```
+
+The plan must create only the four OUs and four `AWSControlTowerBaseline` version `5.0` instances. It must not create accounts. Apply and verify convergence with:
+
+```bash
+./tf.sh --phase workloads --apply
+./tf.sh --phase workloads --chk --dry-run
+```
+
+Do not submit AFT account requests targeting an environment OU until its baseline has completed successfully. The workload root can otherwise evolve independently of AFT platform deployment.
+
 ## Phase 2 — Project-Owned Identity Center Administration
 
-The Identity Center root creates the project-owned administrative personas:
+The Identity Center phase first creates the project-owned administrative personas:
 
 ```text
 AWSIdentityStoreAdmins
@@ -177,7 +206,9 @@ AWSAccessAssignmentAdmins
 
 It also creates their named users, permission sets, memberships, and management-account assignments.
 
-The root discovers the existing Control Tower-enabled organization Identity Center instance. It does not create the instance or adopt Control Tower-created users, groups, permission sets, or assignments.
+The administrative root discovers the existing Control Tower-enabled organization Identity Center instance. It does not create the instance or adopt Control Tower-created users, groups, permission sets, or assignments.
+
+The phase then runs `terraform/identity_center/workload_access`, which creates two manually operated test-user records plus the project-owned workload groups and reusable permission sets. The test users have no Terraform-managed memberships or direct assignments. The account-assignment map is empty initially, so no workload account assignments are created before AFT account IDs exist. Test and Production operator permission sets have no write actions by default.
 
 ### Plan
 
@@ -185,7 +216,7 @@ The root discovers the existing Control Tower-enabled organization Identity Cent
 ./tf.sh --phase identity-center --fmt --dry-run
 ```
 
-Verify that the plan creates only project-owned resources. Stop if it proposes modifying a standard Control Tower group, permission set, assignment, or user.
+Verify that the plan creates only project-owned resources. The workload access plan should create two distinct test users, five empty groups, five permission sets, their managed-policy attachments, and the elevated permission-set deny policies; it must not create memberships or account assignments with the default inputs. Stop if it proposes modifying a standard Control Tower group, permission set, assignment, or user.
 
 ### Apply
 
@@ -195,6 +226,10 @@ Verify that the plan creates only project-owned resources. Stop if it proposes m
 
 After apply:
 
+- verify the workload groups are initially empty;
+- verify both test users have no memberships or account assignments;
+- manually activate the test users, register MFA, and keep any temporary test access documented and time-bounded;
+- verify Test and Production operator access has no write actions;
 - activate the named human identities as required;
 - register strong MFA;
 - verify the one-hour privileged sessions;
@@ -304,6 +339,16 @@ It must not create:
 
 The four GitHub repositories and their `main` branches must exist before this root runs.
 
+### Post-AFT workload account assignments
+
+After AFT provisions a workload account, verify that it is enrolled, resides in the intended governed environment OU, and has a healthy Control Tower baseline. Then add its explicit account ID and approved group/permission-set combination to `TF_VAR_account_assignments` for `terraform/identity_center/workload_access` and review:
+
+```bash
+./tf.sh --phase identity-center --chk --dry-run
+```
+
+Apply only the reviewed central account assignments. AFT customizations must not create organization-wide Identity Center groups, permission sets, or assignments. Review and remove unnecessary Account Factory bootstrap-owner access separately.
+
 ## Phase 4 — GitHub CodeConnections Authorization
 
 The AFT module creates the CodeConnections resource during platform deployment. For GitHub, the new connection normally begins in:
@@ -344,10 +389,13 @@ After CodeConnections authorization, run:
 
 Expected results:
 
+- the Workloads, Dev, Test, and Prod OU baselines remain version `5.0` and `SUCCEEDED`;
 - the AFT OU baseline remains version `5.0` and `SUCCEEDED`;
 - the AFT management account remains enrolled;
 - the Account Factory provisioned product remains `AVAILABLE`;
 - the existing Account Factory user is unchanged;
+- workload groups contain only approved named humans;
+- workload permission sets and assignments match the approved environment matrix;
 - `AFTPlatformAdministration` is assigned only to the AFT account;
 - the CodeConnections connection is `AVAILABLE`;
 - AFT pipelines reference the expected repositories and branches;
@@ -372,6 +420,20 @@ Run these commands in order for a new environment.
 
 ```bash
 ./tf.sh --phase bootstrap --chk --dry-run
+```
+
+### Workload OU hierarchy
+
+```bash
+./tf.sh --phase workloads --fmt --dry-run
+```
+
+```bash
+./tf.sh --phase workloads --apply
+```
+
+```bash
+./tf.sh --phase workloads --chk --dry-run
 ```
 
 ### Identity Center administration

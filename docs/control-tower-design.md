@@ -40,8 +40,9 @@ AWS Organization
 │   └── Automation / Tooling account
 │
 ├── Workloads OU
-│   ├── Production accounts
-│   └── Non-production accounts
+│   ├── Dev OU
+│   ├── Test OU
+│   └── Prod OU
 │
 └── Sandbox OU
     └── Sandbox accounts
@@ -127,17 +128,26 @@ The Terraform implementation separates the landing-zone root from three ordered 
 terraform/
 ├── bootstrap/              # Organizations, shared accounts, and Control Tower landing zone
 ├── identity_center/        # Project-owned administrative identities and permission sets
+│   ├── workload_access/    # Workload access catalog and post-AFT account assignments
 │   └── aft_access/         # Human AFT account access after Account Factory completes
-└── aft/
-    ├── org_unit/           # Dedicated AFT OU and AWSControlTowerBaseline
-    ├── account/            # AFT management account through Control Tower Account Factory
-    └── platform/           # AFT platform module deployment
+├── aft/
+│   ├── org_unit/           # Dedicated AFT OU and AWSControlTowerBaseline
+│   ├── account/            # AFT management account through Control Tower Account Factory
+│   └── platform/           # AFT platform module deployment
+└── workloads/
+    └── org_units/          # Governed Workloads, Dev, Test, and Prod OUs
 ```
 
-Each directory is an independent Terraform root with a distinct state key. The roots run in this order:
+Each directory is an independent Terraform root with a distinct state key. The AFT roots run in this order:
 
 ```text
 bootstrap → identity_center → aft/org_unit → aft/account → identity_center/aft_access → aft/platform
+```
+
+The workload OU root runs after bootstrap and must converge before AFT account requests target its environment OUs:
+
+```text
+bootstrap → workloads/org_units → AFT account requests
 ```
 
 A separate AFT account-request repository or directory is expected after AFT is deployed.
@@ -159,6 +169,8 @@ Bootstrap does not own the AFT OU or AFT management account.
 
 `terraform/identity_center/` runs after the landing zone is healthy. It discovers the Control Tower-enabled organization Identity Center instance and creates only project-owned administrative users, groups, permission sets, memberships, and management-account assignments. It does not manage or adopt Control Tower-created Identity Center resources.
 
+`terraform/identity_center/workload_access/` is a separate central root. It creates project-owned workload groups and reusable permission sets before workload accounts exist. Its account-assignment map defaults to empty and receives explicit account IDs only after AFT provisioning and Control Tower enrollment complete. It creates two manually operated test-user records without memberships or assignments and does not modify Control Tower groups.
+
 `terraform/identity_center/aft_access/` is a separate post-account root. It looks up—but does not own—the human user created or referenced by Account Factory, then creates `AFTPlatformAdministrators`, `AFTPlatformAdministration`, the group membership, and an assignment scoped to the AFT management account.
 
 The security model and residual escalation risks are documented in [`identity_center_security.md`](identity_center_security.md).
@@ -173,6 +185,14 @@ AFT deployment uses three AFT roots with an Identity Center access root between 
 4. `terraform/aft/platform/` deploys AFT after the account is enrolled and its account ID has been verified.
 
 This separation models the asynchronous Control Tower dependencies and prevents AFT changes from involving the existing landing-zone state.
+
+## Workload OU Responsibilities
+
+`terraform/workloads/org_units/` creates the root-level `Workloads` OU and its direct `Dev`, `Test`, and `Prod` child OUs. It enables a separate `AWSControlTowerBaseline` on each OU, governing the parent before creating the child hierarchy. The root creates no accounts and remains separate from both bootstrap and AFT platform state.
+
+The root may run independently after bootstrap, but it must converge before an AFT account request targets `Dev`, `Test`, or `Prod`.
+
+Workload account assignments remain centrally owned by `terraform/identity_center/workload_access/`. AFT and its in-account customizations do not create organization-wide Identity Center groups, permission sets, or assignments.
 
 ## Automatic Account Enrollment
 
@@ -226,6 +246,8 @@ Target governed OU
 Global customization
        ↓
 Account-specific customization
+       ↓
+Reviewed central Identity Center account assignments
 ```
 
 ## Control Tower Baselines
@@ -240,7 +262,7 @@ The current landing-zone version requires `AWSControlTowerBaseline` version `5.0
 
 The AFT OU baseline also uses `prevent_destroy`. Any future compatible baseline migration that requires replacement must therefore be an explicit, reviewed code change. Operators must not remove this protection merely to make an unexplained plan succeed.
 
-An OU intended as an AFT account-provisioning target must have the required Control Tower baseline enabled.
+An OU intended as an AFT account-provisioning target must have the required Control Tower baseline enabled. The `Workloads`, `Dev`, `Test`, and `Prod` OUs each have an explicitly managed baseline; governance of the parent is not treated as a substitute for baseline enablement on its children.
 
 Conceptually:
 
@@ -365,6 +387,8 @@ Phase 3 — AFT platform
 Deploy AFT into AFT management account
 
 Phase 4 — Normal operations
+Governed Workloads / Dev / Test / Prod OU hierarchy
+  ↓
 AFT account requests
   ↓
 Infrastructure / Workload / Sandbox accounts

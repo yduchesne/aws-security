@@ -1,0 +1,4 @@
+title = "aws-security secret scanning"
+
+[extend]
+useDefault = true
