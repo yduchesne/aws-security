@@ -39,6 +39,26 @@ A separate state root, `terraform/identity_center/workload_access/`, creates the
 | `WorkloadDevelopers` | `WorkloadDeveloper` | Dev workload accounts only |
 | `WorkloadTestOperators` | `WorkloadTestOperator` | Test workload accounts only |
 | `WorkloadProductionOperators` | `WorkloadProductionOperator` | Prod workload accounts only |
+| `WorkloadLabAdministrators` | `WorkloadLabAdministrator` | Explicitly allowlisted Dev Lab and Test Lab accounts only |
+| `WorkloadLabBaselineAdministrators` | `WorkloadLabBaselineAdmin` | Explicitly allowlisted Dev Lab and Test Lab accounts only |
+
+The parent root creates the distinct named `sso_lab_admin` human identity. The
+workload-access root looks it up without taking ownership, manages its
+membership in `WorkloadLabBaselineAdministrators`, and assigns the protected,
+one-hour `WorkloadLabBaselineAdmin` permission set directly to both
+lab accounts. This persona can manage versions and tags only for the exact
+`/week2/WorkloadLabRoleBoundary` policy. It cannot create roles, users, access
+keys, or identity providers, and it receives no general workload or governance
+administration.
+
+`WorkloadLabAdministrator` is a one-hour bounded lab persona. It can manage
+only Week 2-path roles carrying the pre-provisioned
+`WorkloadLabRoleBoundary`, named lab S3 buckets, and approved cross-account STS
+role assumptions. It cannot create or mutate its boundary, remove a role
+boundary, create IAM users or access keys, pass roles, or administer central
+governance. The dedicated `WorkloadLabBaselineAdmin` sessions—not the
+bounded exercise administrator—must provision the boundary in both lab
+accounts before exercises begin.
 
 The root creates two named test-user records from `TF_VAR_test_user1_*` and `TF_VAR_test_user2_*`. It intentionally creates no memberships or direct assignments for them; access-portal activation, credentials, MFA, and temporary console-test memberships are manual operations. Its assignment map defaults to empty until AFT-created account IDs are known, and lifecycle preconditions enforce the approved group, permission-set, and environment matrix. Workload assignments cannot target the Organizations management account.
 
@@ -60,7 +80,7 @@ If any resource with one of these names already exists, Terraform must not be ap
 
 ## Administrative Users
 
-The root creates three distinct named human identities and adds each only to its corresponding group:
+The root creates three distinct central administrative identities and adds each only to its corresponding central group:
 
 ```text
 TF_VAR_sso_identity_store_admin_*
@@ -73,7 +93,9 @@ TF_VAR_sso_access_assignment_admin_*
   → AWSAccessAssignmentAdmins
 ```
 
-Terraform requires three distinct email values. This prevents accidental use of one Identity Center record for all responsibilities, but separate user records controlled by the same person are privileged personas rather than true human separation of duties.
+The root also creates the dedicated lab baseline identity from `TF_VAR_sso_lab_admin_*`, without assigning it to a central administrative group. Terraform requires its email to differ from all three central administrators; the workload-access root additionally requires it to differ from both exercise test users.
+
+Separate user records controlled by the same person are privileged personas rather than true human separation of duties.
 
 User email and profile data are stored in Terraform state. A `sensitive` variable suppresses some CLI display but does not remove or encrypt data in state. Backend access must remain tightly restricted.
 
@@ -136,6 +158,8 @@ The permission-set administrator can still create a powerful unprotected permiss
 ## Workload Access Risks
 
 The delegated workload permission sets are intentionally assignable in member accounts and therefore are not tagged `SecurityBoundary = Protected`; the existing access-assignment administrator would otherwise deny their assignment. The permission-set administrator can modify these definitions, the identity administrator can modify workload group memberships, and the assignment administrator can assign approved delegated permission sets. Independent review, CloudTrail monitoring, and Terraform reconciliation remain required to detect policy, membership, or assignment escalation.
+
+The lab-administrator assignment is additionally restricted to an explicit Dev Lab and Test Lab account-ID allowlist. Restricting role names or paths alone is not an escalation control: every lab-created role must carry the immutable, pre-provisioned `WorkloadLabRoleBoundary`, because otherwise a lab operator could create and assume a more privileged role. The independent `terraform/lab/week2/baseline` root owns the boundary in both accounts and is deployed through trusted baseline automation before any exercise root.
 
 The manually operated test users are intentionally outside Terraform membership management. Temporary membership will therefore not be reconciled automatically. Keep both users out of groups by default, prohibit management-account and AFT assignments, document each temporary grant, remove it immediately after testing, and review their live access regularly.
 

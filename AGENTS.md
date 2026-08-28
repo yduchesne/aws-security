@@ -10,8 +10,13 @@ The repository is intended to be reproducible, security-focused, and safe to evo
 
 Before making architectural or Terraform changes, read:
 
-1. `docs/architecture.md`
-2. `docs/control-tower-design.md`
+1. [Architecture](docs/architecture.md)
+2. [Control Tower Design](docs/control-tower-design.md)
+3. [Account Factory for Control Tower](docs/aft-setup.md)
+4. [Identity Center Security](docs/identity_center_security.md)
+5. [Identities and responsibilities](docs/identities_and_responsibilities.md)
+6. [Deployment](docs/deployment.md)
+7. [Devsecops](docs/devsecops.md)
 
 These documents are authoritative for architecture and Control Tower design decisions.
 
@@ -184,9 +189,9 @@ For any non-trivial change:
 
 ## Safety
 
-Do not run `terraform apply`, destroy AWS resources, close AWS accounts, modify production credentials, or perform other irreversible actions unless explicitly instructed.
-
-If a plan proposes replacing or destroying the Control Tower landing zone, AWS Organization, Control Tower shared accounts, AFT management account, or other foundational resources, stop and investigate rather than proceeding.
+- Do not run `terraform apply`, destroy AWS resources, close AWS accounts, modify production credentials, or perform other irreversible actions unless explicitly instructed.
+- If a plan proposes replacing or destroying the Control Tower landing zone, AWS Organization, Control Tower shared accounts, AFT management account, or other foundational resources, stop and investigate rather than proceeding.
+- When creating a new Terraform config directory, always keep the Terraform state in a remote backend.
 
 ## Documentation Maintenance
 

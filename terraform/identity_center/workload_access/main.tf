@@ -36,6 +36,14 @@ locals {
       display_name = "WorkloadProductionOperators"
       description  = "Provides explicitly approved operational capabilities in Prod workload accounts only."
     }
+    lab_administrators = {
+      display_name = "WorkloadLabAdministrators"
+      description  = "Provides bounded lab administration in the explicitly approved Dev Lab and Test Lab accounts."
+    }
+    lab_baseline_administrators = {
+      display_name = "WorkloadLabBaselineAdministrators"
+      description  = "Provides tightly scoped administration in the context of lab setup (e.g.: creating permission boundaries)."
+    }
   }
 
   permission_sets = {
@@ -68,6 +76,18 @@ locals {
       description        = "View-only Prod access plus explicitly configured operational actions."
       session_duration   = "PT1H"
       managed_policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/job-function/ViewOnlyAccess"
+    }
+    lab_administrator = {
+      name               = "WorkloadLabAdministrator"
+      description        = "Bounded IAM, S3, and STS administration for approved Week 2 lab exercises."
+      session_duration   = "PT1H"
+      managed_policy_arn = null
+    }
+    lab_baseline_administrator = {
+      name               = "WorkloadLabBaselineAdmin"
+      description        = "Tightly scoped management of the persistent Week 2 lab-role permissions boundary."
+      session_duration   = "PT1H"
+      managed_policy_arn = null
     }
   }
 
@@ -133,7 +153,36 @@ locals {
     "developers:developer:dev",
     "test_operators:test_operator:test",
     "production_operators:production_operator:prod",
+    "lab_administrators:lab_administrator:dev",
+    "lab_administrators:lab_administrator:test",
   ])
+
+  lab_account_ids = toset(values(var.lab_account_ids))
+  lab_role_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:iam::${account_id}:role${var.lab_role_path_prefix}*"
+  ]
+  lab_boundary_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:iam::${account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  ]
+  lab_bucket_arns = [
+    "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*",
+    "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*/*",
+  ]
+}
+
+# The parent identity_center root owns this named human. This root only looks it
+# up so workload-specific access can be managed without duplicating ownership.
+data "aws_identitystore_user" "lab_admin" {
+  identity_store_id = local.identity_store_id
+
+  alternate_identifier {
+    unique_attribute {
+      attribute_path  = "UserName"
+      attribute_value = var.sso_lab_admin_email
+    }
+  }
 }
 
 resource "aws_identitystore_user" "test" {
@@ -182,6 +231,22 @@ resource "aws_identitystore_group" "workload" {
   }
 }
 
+resource "aws_identitystore_group_membership" "lab_baseline_administrator" {
+  identity_store_id = local.identity_store_id
+  group_id          = aws_identitystore_group.workload["lab_baseline_administrators"].group_id
+  member_id         = data.aws_identitystore_user.lab_admin.user_id
+
+  lifecycle {
+    precondition {
+      condition = !contains([
+        var.test_user1_email,
+        var.test_user2_email,
+      ], var.sso_lab_admin_email)
+      error_message = "The lab baseline administrator must be distinct from both manually operated exercise test users."
+    }
+  }
+}
+
 resource "aws_ssoadmin_permission_set" "workload" {
   for_each = local.permission_sets
 
@@ -190,14 +255,24 @@ resource "aws_ssoadmin_permission_set" "workload" {
   description      = each.value.description
   session_duration = each.value.session_duration
 
-  tags = merge(var.common_tags, {
-    AssignmentDelegation = "Allowed"
-    AccessDomain         = "Workloads"
-  })
+  tags = merge(
+    var.common_tags,
+    {
+      AccessDomain = "Workloads"
+    },
+    each.key == "lab_baseline_administrator" ? {
+      SecurityBoundary = "Protected"
+      } : {
+      AssignmentDelegation = "Allowed"
+    }
+  )
 }
 
 resource "aws_ssoadmin_managed_policy_attachment" "workload" {
-  for_each = local.permission_sets
+  for_each = {
+    for key, permission_set in local.permission_sets : key => permission_set
+    if permission_set.managed_policy_arn != null
+  }
 
   instance_arn       = local.instance_arn
   permission_set_arn = aws_ssoadmin_permission_set.workload[each.key].arn
@@ -233,6 +308,304 @@ resource "aws_ssoadmin_permission_set_inline_policy" "elevated_boundary" {
   })
 }
 
+resource "aws_ssoadmin_permission_set_inline_policy" "lab_baseline_administrator" {
+  # checkov:skip=CKV_AWS_289: This dedicated one-hour persona intentionally manages only the exact Week 2 boundary policies in two allowlisted lab accounts; no general IAM or workload administration is granted.
+  for_each = length(var.lab_account_ids) == 2 ? { enabled = true } : {}
+
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.workload["lab_baseline_administrator"].arn
+
+  inline_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadCurrentIdentity"
+        Effect   = "Allow"
+        Action   = "sts:GetCallerIdentity"
+        Resource = "*"
+      },
+      {
+        Sid    = "CreateAndTagLabBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:CreatePolicy",
+          "iam:TagPolicy",
+        ]
+        Resource = local.lab_boundary_arns
+      },
+      {
+        Sid    = "ReadLabBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListEntitiesForPolicy",
+          "iam:ListPolicyTags",
+          "iam:ListPolicyVersions",
+        ]
+        Resource = local.lab_boundary_arns
+      },
+      {
+        Sid    = "UpdateLabBoundaryVersions"
+        Effect = "Allow"
+        Action = [
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+          "iam:TagPolicy",
+          "iam:UntagPolicy",
+        ]
+        Resource = local.lab_boundary_arns
+      },
+      {
+        Sid    = "DenyUnrelatedAdministration"
+        Effect = "Deny"
+        Action = [
+          "account:*",
+          "controltower:*",
+          "identitystore:*",
+          "organizations:*",
+          "sso:*",
+          "iam:AddUserToGroup",
+          "iam:AttachGroupPolicy",
+          "iam:AttachRolePolicy",
+          "iam:AttachUserPolicy",
+          "iam:CreateAccessKey",
+          "iam:CreateGroup",
+          "iam:CreateInstanceProfile",
+          "iam:CreateLoginProfile",
+          "iam:CreateOpenIDConnectProvider",
+          "iam:CreateRole",
+          "iam:CreateSAMLProvider",
+          "iam:CreateServiceLinkedRole",
+          "iam:CreateUser",
+          "iam:PassRole",
+          "iam:PutGroupPolicy",
+          "iam:PutRolePolicy",
+          "iam:PutUserPolicy",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
+  for_each = length(var.lab_account_ids) == 2 ? { enabled = true } : {}
+
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.workload["lab_administrator"].arn
+
+  inline_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadCurrentIdentity"
+        Effect   = "Allow"
+        Action   = "sts:GetCallerIdentity"
+        Resource = "*"
+      },
+      {
+        Sid      = "CreateBoundedLabRoles"
+        Effect   = "Allow"
+        Action   = "iam:CreateRole"
+        Resource = local.lab_role_arns
+        Condition = {
+          ArnEquals = {
+            "iam:PermissionsBoundary" = local.lab_boundary_arns
+          }
+        }
+      },
+      {
+        Sid    = "ManageBoundedLabRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:DeleteRole",
+          "iam:DeleteRolePolicy",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:ListRolePolicies",
+          "iam:ListRoleTags",
+          "iam:PutRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:UpdateRole",
+          "iam:UpdateRoleDescription",
+        ]
+        Resource = local.lab_role_arns
+      },
+      {
+        Sid      = "AttachOnlyApprovedBoundary"
+        Effect   = "Allow"
+        Action   = "iam:PutRolePermissionsBoundary"
+        Resource = local.lab_role_arns
+        Condition = {
+          ArnEquals = {
+            "iam:PermissionsBoundary" = local.lab_boundary_arns
+          }
+        }
+      },
+      {
+        Sid    = "ReadApprovedBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+        ]
+        Resource = local.lab_boundary_arns
+      },
+      {
+        Sid      = "AssumeOnlyLabRoles"
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = local.lab_role_arns
+      },
+      {
+        Sid      = "ReadLabAuditEvidence"
+        Effect   = "Allow"
+        Action   = "cloudtrail:LookupEvents"
+        Resource = "*"
+      },
+      {
+        Sid    = "ManageNamedLabBuckets"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:DeleteBucketEncryption",
+          "s3:DeleteBucketOwnershipControls",
+          "s3:DeleteBucketPolicy",
+          "s3:DeleteBucketPublicAccessBlock",
+          "s3:DeleteBucketTagging",
+          "s3:DeleteBucketWebsite",
+          "s3:DeleteObject",
+          "s3:DeleteObjectVersion",
+          "s3:GetAccelerateConfiguration",
+          "s3:GetBucketAcl",
+          "s3:GetBucketCORS",
+          "s3:GetBucketLocation",
+          "s3:GetBucketLogging",
+          "s3:GetBucketObjectLockConfiguration",
+          "s3:GetBucketOwnershipControls",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketRequestPayment",
+          "s3:GetBucketTagging",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketWebsite",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetObject",
+          "s3:GetObjectAcl",
+          "s3:GetObjectAttributes",
+          "s3:GetObjectTagging",
+          "s3:GetObjectVersion",
+          "s3:GetReplicationConfiguration",
+          "s3:ListBucket",
+          "s3:ListBucketVersions",
+          "s3:PutBucketOwnershipControls",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:PutBucketTagging",
+          "s3:PutBucketVersioning",
+          "s3:PutEncryptionConfiguration",
+          "s3:PutLifecycleConfiguration",
+          "s3:PutObject",
+          "s3:PutObjectTagging",
+        ]
+        Resource = local.lab_bucket_arns
+      },
+      {
+        Sid    = "DenyBoundaryAndCredentialEscalation"
+        Effect = "Deny"
+        Action = [
+          "iam:AddUserToGroup",
+          "iam:AttachGroupPolicy",
+          "iam:AttachRolePolicy",
+          "iam:AttachUserPolicy",
+          "iam:CreateAccessKey",
+          "iam:CreateGroup",
+          "iam:CreateInstanceProfile",
+          "iam:CreateLoginProfile",
+          "iam:CreateOpenIDConnectProvider",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:CreateSAMLProvider",
+          "iam:CreateServiceLinkedRole",
+          "iam:CreateUser",
+          "iam:DeleteRolePermissionsBoundary",
+          "iam:PassRole",
+          "iam:PutGroupPolicy",
+          "iam:PutUserPermissionsBoundary",
+          "iam:PutUserPolicy",
+          "iam:SetDefaultPolicyVersion",
+          "iam:UpdateAccessKey",
+          "iam:UpdateLoginProfile",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "DenyCentralGovernanceAdministration"
+        Effect = "Deny"
+        Action = [
+          "account:*",
+          "billing:*",
+          "budgets:*",
+          "controltower:*",
+          "identitystore:*",
+          "organizations:*",
+          "sso:*",
+          "cloudtrail:DeleteTrail",
+          "cloudtrail:PutEventSelectors",
+          "cloudtrail:StopLogging",
+          "cloudtrail:UpdateTrail",
+          "config:DeleteConfigurationRecorder",
+          "config:DeleteDeliveryChannel",
+          "config:StopConfigurationRecorder",
+          "guardduty:DeleteDetector",
+          "guardduty:DisassociateFromAdministratorAccount",
+          "guardduty:StopMonitoringMembers",
+          "kms:CreateGrant",
+          "kms:DisableKey",
+          "kms:PutKeyPolicy",
+          "kms:ScheduleKeyDeletion",
+          "logs:DeleteLogGroup",
+          "logs:DeleteRetentionPolicy",
+          "securityhub:DisableSecurityHub",
+          "securityhub:DisassociateFromAdministratorAccount",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_ssoadmin_account_assignment" "lab_baseline_administrator" {
+  for_each = var.lab_account_ids
+
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.workload["lab_baseline_administrator"].arn
+  principal_id       = aws_identitystore_group.workload["lab_baseline_administrators"].group_id
+  principal_type     = "GROUP"
+  target_id          = each.value
+  target_type        = "AWS_ACCOUNT"
+
+  lifecycle {
+    precondition {
+      condition     = contains(["dev", "test"], each.key)
+      error_message = "Lab baseline administration may target only the allowlisted Dev Lab and Test Lab accounts."
+    }
+
+    precondition {
+      condition     = each.value != var.management_account_id
+      error_message = "Lab baseline administration must not be assigned to the Organizations management account."
+    }
+  }
+}
+
 resource "aws_ssoadmin_account_assignment" "workload" {
   for_each = var.account_assignments
 
@@ -255,6 +628,14 @@ resource "aws_ssoadmin_account_assignment" "workload" {
     precondition {
       condition     = each.value.account_id != var.management_account_id
       error_message = "Workload permission sets must not be assigned to the Organizations management account."
+    }
+
+    precondition {
+      condition = (
+        each.value.permission_set_key != "lab_administrator" ||
+        each.value.account_id == lookup(var.lab_account_ids, each.value.environment, "")
+      )
+      error_message = "WorkloadLabAdministrator may be assigned only to the explicitly allowlisted Dev Lab or Test Lab account for the selected environment."
     }
   }
 }

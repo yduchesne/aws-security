@@ -13,6 +13,14 @@ output "workload_permission_set_arns" {
   value       = { for key, permission_set in aws_ssoadmin_permission_set.workload : key => permission_set.arn }
 }
 
+output "lab_baseline_account_assignments" {
+  description = "WorkloadLabBaselineAdmin assignments in the allowlisted lab accounts."
+  value = {
+    for environment, assignment in aws_ssoadmin_account_assignment.lab_baseline_administrator :
+    environment => assignment.target_id
+  }
+}
+
 output "workload_account_assignments" {
   description = "Configured workload account assignments, keyed by the caller-provided stable identifier."
   value = {

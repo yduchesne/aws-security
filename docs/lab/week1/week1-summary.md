@@ -32,7 +32,7 @@ example-organization/aws-security-aft-account-customizations
 example-organization/aws-security-aft-account-provisioning-customizations
 ```
 
-The AFT VPC is intentionally disabled with `TF_VAR_aft_enable_vpc=false`. See [`../aft-setup.md`](../aft-setup.md) for the design and cost tradeoffs.
+The AFT VPC is intentionally disabled with `TF_VAR_aft_enable_vpc=false`. See [`../../aft-setup.md`](../../aft-setup.md) for the design and cost tradeoffs.
 
 Automatic account enrollment is also intentionally disabled. Accounts created through AFT still use the Control Tower Account Factory workflow; an account merely moved into a governed OU must not be assumed to be enrolled.
 
@@ -170,7 +170,7 @@ Temporary bootstrap
   → retired after operational handoff
 ```
 
-Use [`../identities_and_responsibilities.md`](../identities_and_responsibilities.md) as the authoritative project identity model.
+Use [`../../identities_and_responsibilities.md`](../../identities_and_responsibilities.md) as the authoritative project identity model.
 
 AWS references:
 

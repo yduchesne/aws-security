@@ -1,0 +1,17 @@
+# Use disposable workload accounts and IAM Identity Center-backed AWS CLI
+# profiles. Do not put credentials in this file.
+source_account_id       = "111122223333"
+target_account_id       = "444455556666"
+source_aws_profile      = "week2-source"
+target_aws_profile      = "week2-target"
+source_operator_role_arn = "arn:aws:iam::111122223333:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_Example_0123456789abcdef"
+
+# Trusted baseline automation must create this boundary in both accounts before
+# this exercise is planned. These defaults match the workload-access catalog.
+lab_role_boundary_name = "WorkloadLabRoleBoundary"
+lab_role_boundary_path = "/week2/"
+
+# S3 bucket names must be globally unique and use the authorized lab prefix.
+lab_bucket_name_prefix = "aws-security-week2-"
+approved_bucket_name   = "aws-security-week2-111122223333-ex1-approved"
+unrelated_bucket_name  = "aws-security-week2-111122223333-ex1-unrelated"
