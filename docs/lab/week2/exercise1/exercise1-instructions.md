@@ -1,4 +1,6 @@
-# Week 2 Exercise 1 Setup and Execution
+# [Core] Week 2 Exercise 1 Setup and Execution
+
+This exercise is classified as **Core** in the Week 2 curriculum.
 
 This guide covers Exercise 1 resources, execution, authorization tests,
 evidence, and cleanup. Complete the [Week 2 shared setup](../week2-setup.md)
@@ -26,15 +28,15 @@ Successful cross-account access
 You will observe that:
 
 - IAM Identity Center provides short-lived credentials for the initial human
-  sessions;
-- a source-account role can call `sts:AssumeRole` only for an explicitly named
-  target role;
-- the target role trusts one approved source role rather than the entire source
-  account;
-- the assumed target role can read only a selected S3 resource;
-- write access and unrelated-resource access remain implicitly denied;
-- an identity-side `sts:AssumeRole` allow is insufficient when the target trust
-  policy excludes the caller;
+  sessions;.
+- A source-account role can call `sts:AssumeRole` only for an explicitly named
+  target role;.
+- The target role trusts one approved source role rather than the entire source
+  account;.
+- The assumed target role can read only a selected S3 resource;.
+- Write access and unrelated-resource access remain implicitly denied;.
+- An identity-side `sts:AssumeRole` allow is insufficient when the target trust
+  policy excludes the caller;.
 - CloudTrail records the principals and role sessions involved in the chain.
 
 ### High-level tasks
@@ -59,8 +61,36 @@ The persistent `WorkloadLabRoleBoundary` policies are prerequisites owned by
 `terraform/lab/week2/baseline`; they are not Exercise 1 resources and must not
 be destroyed during exercise cleanup.
 
+## Table of contents
+
+- [Introduction](#introduction).
+  - [Goals](#goals).
+  - [High-level tasks](#high-level-tasks).
+- [Configure Exercise 1 inputs](#configure-exercise-1-inputs).
+  - [Prepare the `.env` file](#prepare-the-env-file).
+  - [Create the AWS CLI profiles](#create-the-aws-cli-profiles).
+  - [Configure the provisioned IAM role ARN](#configure-the-provisioned-iam-role-arn).
+  - [Add the role-chain profiles](#add-the-role-chain-profiles-to-awsconfig).
+- [Some Useful Background](#some-useful-background).
+  - [Provisioned IAM Role](#provisioned-iam-role).
+  - [Why `TF_VAR_source_operator_role_arn` is required](#why-tf_var_source_operator_role_arn-is-required).
+- [Initialize, validate, and plan](#initialize-validate-and-plan).
+- [Configure role chaining for tests](#configure-role-chaining-for-tests).
+- [Execute the authorization tests](#execute-the-authorization-tests).
+  - [Test 1 — Approved role chain reaches the target role](#test-1--approved-role-chain-reaches-the-target-role).
+  - [Test 2 — List the approved bucket](#test-2--list-the-approved-bucket).
+  - [Test 3 — Read the approved object](#test-3--read-the-approved-object).
+  - [Test 4 — Attempt to write to the approved bucket](#test-4--attempt-to-write-to-the-approved-bucket).
+  - [Test 5 — Attempt to list the unrelated bucket](#test-5--attempt-to-list-the-unrelated-bucket).
+  - [Test 6 — Attempt the untrusted cross-account chain](#test-6--attempt-the-untrusted-cross-account-chain).
+- [Inspect CloudTrail evidence](#inspect-cloudtrail-evidence).
+- [Investigating in the Console](#investigating-in-the-console).
+- [Clean up](#clean-up).
+- [References](#references).
+
 ## Configure Exercise 1 inputs
 
+### Prepare the .env file
 Open a terminal and source the global project environment:
 
 ```bash
@@ -82,27 +112,277 @@ cp terraform/lab/week2/exercise1/.env.example \
 
 Replace every placeholder in the copied file. Configure:
 
-- the Dev Lab/source and Test Lab/target account IDs;
-- `week2-source` and `week2-target` as the AWS profiles;
-- the source account's IAM Identity Center-provisioned role ARN;
-- two globally unique bucket names beginning with `aws-security-week2-`.
+1. the Dev Lab/source and Test Lab/target account IDs;
+2. `week2-source` and `week2-target` as the AWS profiles;
+3. the source account's IAM Identity Center-provisioned role ARN;
+4. two globally unique bucket names beginning with `aws-security-week2-`.
 
 The exercise `.env` is a shell script. Every assignment must use `export` and
 must not contain spaces around `=`:
 
+An example of the resulting `.env` file:
+
 ```bash
+export TF_VAR_source_account_id="${TF_LAB_DEV_ACCOUNT_ID}"
+export TF_VAR_target_account_id="${TF_LAB_TEST_ACCOUNT_ID}"
 export TF_VAR_source_aws_profile="week2-source"
+export TF_VAR_target_aws_profile="week2-target"
+
+export TF_VAR_source_operator_role_arn="arn:aws:iam::${TF_LAB_DEV_ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/${TF_HOME_REGION}/AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>"
+
+export TF_VAR_lab_role_boundary_name="WorkloadLabRoleBoundary"
+export TF_VAR_lab_role_boundary_path="/week2/"
+
+export TF_VAR_approved_bucket_name="aws-security-week2-${TF_MANAGEMENT_ACCOUNT_ID}-approved"
+export TF_VAR_unrelated_bucket_name="aws-security-week2-${TF_MANAGEMENT_ACCOUNT_ID}-unrelated"
 ```
 
-Source the completed file:
+In the above, the values for the following interpolated environment variables are expected
+to come from the global `.env` file, which you should have create as per
+instructions: `~/.env/aws-security/terraform/.env`.
+
+- `TF_LAB_DEV_ACCOUNT_ID`: Correponds to the `Dev Lab` workload account ID.
+- `TF_LAB_TEST_ACCOUNT_ID`: Correspond to the `Test Lab` workload account ID.
+- `TF_MANAGEMENT_ACCOUNT_ID`: Correspond to the ID of the management account.
+
+Regarding the `TF_VAR_source_operator_role_arn`: we will determine the value for `<SUFFIX>`
+further below, in the _Configure the provisioned IAM role ARN_ section. We need to be logged
+in with the `week2-source` profile to obtain the information we need for making the value
+for this variable. We therefore have to set up that profile as the first step.
+
+For now, make sure to source the source the completed file, to load the variables into your
+shell:
 
 ```bash
 source terraform/lab/week2/exercise1/.env
 ```
 
-### Purpose of `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>`
+### Create the AWS CLI profiles
 
-IAM Identity Center creates an IAM role in an AWS account when a permission set
+Exercise 1 uses two kinds of AWS CLI profile:
+
+1. **Direct IAM Identity Center profiles** establish the two provisioning and
+   evidence sessions. `week2-source` is the session for test user 1 in the Dev
+   Lab/source account, and `week2-target` is the session for test user 2 in the
+   Test Lab/target account. Terraform uses these profiles through its aliased
+   `aws.source` and `aws.target` providers. The target profile is also used to
+   inspect CloudTrail and the target account directly.
+2. **Role-chain profiles** exercise the authorization model. The caller
+   profiles assume the disposable source roles. The final target profiles then
+   use those caller sessions to request `CrossAccountReadRole`. These profiles
+   contain role metadata only; the AWS CLI obtains short-lived credentials at
+   runtime and does not store access keys.
+
+The two direct profiles must use separate SSO sessions because they represent
+the separate test users we have created in Identity Center. They are created by
+Terraform and correspond to `TF_VAR_test_user1_email` and `TF_VAR_test_user2_email`
+in the global `.env` file. You should recognize them in Identity Center through
+their email addresses, which should have the format `<base_name>+test1@<domain>`
+or `<base_name>+test2@<domain>`.
+
+The accounts for these users must have been "activated": they must have a verified email;
+MFA must have been enabled; they should have a password.
+
+See the _Enable an IAM Identity Center user account_ section of
+[SSO Auth](../../../sso_auth.md) for the details on this.
+
+#### Configure the source profile as test user 1:
+
+```bash
+aws configure sso --profile week2-source
+```
+
+Select or enter:
+
+```text
+SSO session name: week2-test1
+SSO start URL: https://<identity-center-instance>.awsapps.com/start
+SSO region: us-east-2
+SSO registration scopes: sso:account:access
+Account: Dev Lab/source
+Role/permission set: WorkloadLabAdministrator
+Default client Region: us-east-2
+Output format: json
+```
+
+Notes:
+- You may obtain the value for "SSO start URL" from Identity Center
+  (got to Identity Center > Dashboard, that look on the right-hand side. Pick the IPv4 URL).
+- For SSO region, pick the region in which you created Identity Center (what is referred to as the "home region" in this project). Your region might not be us-east-2.
+- For Account: pick the Dev Lab account in the drop-down.
+- For Default client region: pick your "home region", as well.
+
+#### Configure the target profile as test user 2
+
+We are using a different SSO session name and a separate browser context:
+
+```bash
+aws configure sso --profile week2-target
+```
+
+Select:
+
+```text
+SSO session name: week2-test2
+SSO start URL: https://<identity-center-instance>.awsapps.com/start
+SSO region: us-east-2
+SSO registration scopes: sso:account:access
+Account: Test Lab/target
+Role/permission set: WorkloadLabAdministrator
+Default client Region: us-east-2
+Output format: json
+```
+
+Authenticate and verify these direct profiles before running Terraform:
+
+```bash
+aws sso login --profile week2-source --use-device-code --no-browser
+aws sso login --profile week2-target --use-device-code --no-browser
+
+aws sts get-caller-identity --profile week2-source
+aws sts get-caller-identity --profile week2-target
+```
+
+Expected results are:
+
+```text
+week2-source → Dev Lab account + AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>
+week2-target → Test Lab account + AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>
+```
+
+The account IDs must match `TF_VAR_source_account_id` and
+`TF_VAR_target_account_id`, respectively. Stop if either account or permission
+set is unexpected. See [the SSO authentication guide](../../../sso_auth.md)
+for browser-session isolation and device-code behavior.
+
+### Configure the provisioned IAM role ARN
+
+The source operator ARN is required by Terraform to create the source-role
+trust policy. It is the underlying IAM role ARN used by the two direct SSO
+profiles above, not any of the role-chain session ARNs.
+
+The required ARN has this form:
+
+```bash
+arn:aws:iam::${TF_LAB_DEV_ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/${TF_HOME_REGION}/AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>
+```
+
+As we've indicated above, the `<SUFFIX>` is generated by Identity Center.
+
+Derive the generated role name from the authenticated source session:
+
+```bash
+aws sts get-caller-identity \
+  --profile week2-source \
+  --query Arn \
+  --output text
+```
+
+The STS ARN resembles:
+
+```text
+arn:aws:sts::<ACCOUNT_ID>:assumed-role/AWSReservedSSO_WorkloadLabAdministrator_0123456789abcdef/<SESSION_NAME>
+```
+
+Note that the <SUFFIX> in this case is `0123456789abcdef`.
+
+In the `.env` file, you can now replace the <SUFFIX> part with the value you found (which, for this example, is `0123456789abcdef`):
+
+```bash
+export TF_VAR_source_operator_role_arn="arn:aws:iam::${TF_LAB_DEV_ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/${TF_HOME_REGION}/AWSReservedSSO_WorkloadLabAdministrator_0123456789abcdef"
+```
+
+Note: If the permission-set role is deleted and recreated, obtain its new suffix and
+update the environment variable accordingly, before `terraform plan` / `terraform apply`.
+
+### Add the role-chain profiles to `~/.aws/config`
+
+After Terraform has been applied, obtain the required role ARNs:
+
+```bash
+export EXERCISE_ROOT="terraform/lab/week2/exercise1"
+echo "approved_caller_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw approved_caller_role_arn)"
+echo "untrusted_caller_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw untrusted_caller_role_arn)"
+echo "target_read_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw target_read_role_arn)"
+```
+
+Append the following profiles to `~/.aws/config`, replacing the placeholders
+with those output values - do not put the values within quotes.
+
+```ini
+[profile week2-approved-caller]
+source_profile = week2-source
+role_arn = <approved_caller_role_arn>
+role_session_name = week2-approved-caller
+region = us-east-2
+
+[profile week2-target-read]
+source_profile = week2-approved-caller
+role_arn = <target_read_role_arn>
+role_session_name = week2-target-read
+region = us-east-2
+
+[profile week2-untrusted-caller]
+source_profile = week2-source
+role_arn = <untrusted_caller_role_arn>
+role_session_name = week2-untrusted-caller
+region = us-east-2
+
+[profile week2-untrusted-target]
+source_profile = week2-untrusted-caller
+role_arn = <target_read_role_arn>
+role_session_name = week2-untrusted-target
+region = us-east-2
+```
+
+__Important__:  Do not add credentials to these entries.
+
+The purpose of each role-chain profile is:
+
+| Profile | Purpose | Expected outcome |
+|---|---|---|
+| `week2-approved-caller` | Assume `CrossAccountCallerRole` in the source account | Allow |
+| `week2-target-read` | Chain through the approved caller into `CrossAccountReadRole` | Allow |
+| `week2-untrusted-caller` | Assume the negative-test source role | Allow |
+| `week2-untrusted-target` | Try the final hop through the untrusted source role | Deny because the target trust excludes it |
+
+The role profiles do not represent additional human identities. They are CLI
+role-chain definitions rooted in the authenticated `week2-source` SSO session.
+The `week2-target-read` and `week2-untrusted-target` profiles therefore end in
+the target account, while the two caller profiles end in the source account.
+
+Verify every configured profile independently. These commands request caller
+identity only; they do not create or modify resources:
+
+```bash
+aws sts get-caller-identity --profile week2-approved-caller
+aws sts get-caller-identity --profile week2-target-read
+aws sts get-caller-identity --profile week2-untrusted-caller
+aws sts get-caller-identity --profile week2-untrusted-target
+```
+
+Expected results are:
+
+```text
+week2-approved-caller  → CrossAccountCallerRole in the Dev Lab/source account
+week2-target-read      → CrossAccountReadRole in the Test Lab/target account
+week2-untrusted-caller → UntrustedCrossAccountCallerRole in the Dev Lab/source account
+week2-untrusted-target → AccessDenied on the final AssumeRole hop
+```
+
+The final command is intentionally expected to fail. It proves that the
+untrusted source role has source-side permission to request the target role but
+is rejected by the target role's trust policy. Treat an unexpected success as
+a failed security test and inspect the target trust relationship before
+continuing.
+
+## Some Useful Background
+
+Before moving on, with the exercise per se, we are providing some background meant to help graps the environment and the sequence of tasks performed.
+
+### Provisioned IAM Role
+
+IAM Identity Center creates an IAM role (a "provisioned" IAM role, as it is entirely under the control of Identity Center) in an AWS account when a permission set
 is provisioned through an account assignment. For the
 `WorkloadLabAdministrator` permission set, the generated role name is:
 
@@ -119,18 +399,16 @@ not the exercise Terraform root, creates and maintains this role.
 The permission set, provisioned role, and role session are three separate
 objects:
 
-```text
 1. Permission set
-   WorkloadLabAdministrator
-   Central configuration maintained in IAM Identity Center
+   - Name: `WorkloadLabAdministrator`
+   - Central configuration maintained in IAM Identity Center.
 
 2. Provisioned IAM role
-   AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>
-   Account-local IAM role created from the permission set
+   - `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>`
+   - Account-local IAM role created from the permission set.
 
 3. Assumed-role session
-   Short-lived STS credentials issued to an assigned, authenticated user
-```
+   - Short-lived STS credentials issued to an assigned, authenticated user.
 
 A permission set is a central template describing policies, session duration,
 and related access settings. It is not an IAM principal and cannot itself call
@@ -322,21 +600,107 @@ allowlisted lab accounts and configured lab resource prefixes:
 }
 ```
 
-The excerpt omits some repetitive S3 read-back and cleanup actions. Deep-dive
-into the linked Terraform definition above for the complete policy structure,
-its explicit denies, resource construction, and action list.
+Here is an excerpt of the permission boundary. The policy is created once in
+each lab account by `terraform/lab/week2/baseline`; the placeholders below are
+rendered with the appropriate account IDs, AWS partition, and configured lab
+bucket prefix:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAssumingBoundedWeekTwoRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::<TF_LAB_DEV_ACCOUNT_ID>:role/week2/*",
+        "arn:aws:iam::<TF_LAB_TEST_ACCOUNT_ID>:role/week2/*"
+      ]
+    },
+    {
+      "Sid": "AllowReadCurrentIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowWeekTwoLabBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-security-week2-*",
+        "arn:aws:s3:::aws-security-week2-*/*"
+      ]
+    }
+  ]
+}
+```
+
+For the Dev Lab/source account, the first role ARN resolves to:
+
+```text
+arn:aws:iam::<TF_LAB_DEV_ACCOUNT_ID>:role/week2/*
+```
+
+and the boundary itself is addressed as:
+
+```text
+arn:aws:iam::<TF_LAB_DEV_ACCOUNT_ID>:policy/week2/WorkloadLabRoleBoundary
+```
+
+The corresponding Test Lab/target boundary uses
+`<TF_LAB_TEST_ACCOUNT_ID>`. The `aws` partition and bucket prefix are rendered
+from the baseline configuration, so the excerpt should not be copied as a
+literal policy without substituting the environment-specific values.
+
+This is a permissions boundary, not an identity policy. It defines the maximum
+permissions an attached role can receive; it does not grant any of these
+operations by itself. For example, `CrossAccountReadRole` can read only the
+approved object because its identity policy grants that specific read, even
+though the boundary permits a broader Week 2 bucket ceiling. Conversely, a
+source role cannot assume a bounded role unless its identity policy also grants
+`sts:AssumeRole` on the requested role ARN.
+
+The boundary deliberately limits role assumption to `/week2/*` roles in the
+two allowlisted lab accounts and S3 access to the configured Week 2 bucket
+prefix. It does not grant IAM user or access-key administration, managed-policy
+creation, `iam:PassRole`, Organizations administration, or unrestricted access
+to other resources; those capabilities are outside the boundary's allowlist.
+Applicable SCPs, session policies, resource policies, trust policies, and
+explicit denies remain additional authorization constraints.
+
+The complete source template is
+[`workload-lab-role-boundary.json.tftpl`](../../../../terraform/lab/week2/baseline/policies/workload-lab-role-boundary.json.tftpl).
+Exercise 1 reads the already-created policy as a data source. It must not
+import, edit, replace, or destroy `WorkloadLabRoleBoundary`; changing it here
+would cross the Terraform ownership boundary and weaken the control used by
+this exercise.
 
 These permissions prevent common provider-time `AccessDenied` failures:
 
-- Terraform can create roles only when the approved boundary is supplied;
-- role-policy, trust-policy, tag, and read-back APIs allow Terraform to
-  reconcile role state;
+- Terraform can create roles only when the approved boundary is supplied;.
+- Role-policy, trust-policy, tag, and read-back APIs allow Terraform to
+  reconcile role state;.
 - `iam:GetPolicyVersion` lets Terraform inspect the pre-existing boundary;
 - S3 create, configuration, read-back, object, and cleanup APIs support the two
-  disposable buckets;
+  disposable buckets;.
 - `sts:AssumeRole` enables the later approved and intentionally untrusted role
   chains;
 - `cloudtrail:LookupEvents` supports evidence collection.
+- Following the least privilege and separation of duties principles,
+  we ensure that the role is scoped to the account, to the relevant S3 Bucket,
+  policy and role. In addition it is bounded by a permission boundary.
+
 
 The permission set deliberately omits IAM user and access-key administration,
 `iam:PassRole`, general managed-policy creation, and access outside the Week 2
@@ -344,7 +708,7 @@ role and bucket prefixes. An Allow in this permission set can still be limited
 by an SCP, the required role permissions boundary, a resource policy, or an
 explicit deny.
 
-### Why `TF_VAR_source_operator_role_arn` is required
+### Why a Trust Policy is Required
 
 Exercise 1 creates `CrossAccountCallerRole` and
 `UntrustedCrossAccountCallerRole` in the source account. Their authoritative
@@ -353,6 +717,12 @@ Terraform definitions are in
 specifically the `aws_iam_role.caller`, `aws_iam_role.untrusted_caller`,
 `data.aws_iam_policy_document.source_operator_trust`, and associated inline
 role-policy blocks.
+
+From the role corresponding to the `TF_VAR_source_operator_role_arn` (whose value should include `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>`) variable we have set up earlier, we will
+"assume" (i.e.: `sts:AssumeRole`) either one of the roles above.
+
+For this to be possible, both roles above must "trust" the `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>`.
+This requires a trust policy, assigned to both roles.
 
 #### What an IAM role trust policy is
 
@@ -512,60 +882,6 @@ policy as the reason for the expected failure. Follow the linked Terraform file
 to inspect the complete role descriptions, provider assignments, generated
 ARNs, boundaries, and target role definition.
 
-The required ARN has this form:
-
-```text
-arn:aws:iam::<TF_LAB_DEV_ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>
-```
-
-Derive the generated role name from the authenticated source session:
-
-```bash
-aws sts get-caller-identity \
-  --profile week2-source \
-  --query Arn \
-  --output text
-```
-
-The STS ARN resembles:
-
-```text
-arn:aws:sts::<TF_LAB_DEV_ACCOUNT_ID>:assumed-role/AWSReservedSSO_WorkloadLabAdministrator_0123456789abcdef/<SESSION_NAME>
-```
-
-Convert the role-name segment to the underlying IAM ARN by using the `iam`
-service and the Identity Center reserved role path. Do not use either of these
-as `TF_VAR_source_operator_role_arn`:
-
-```text
-arn:aws:sts::...:assumed-role/...
-arn:aws:sso:::permissionSet/...
-```
-
-If the permission-set role is deleted and recreated, obtain its new ARN and
-update the environment variable before planning.
-
-### Example environment inputs
-
-```bash
-export TF_VAR_source_account_id="${TF_LAB_DEV_ACCOUNT_ID}"
-export TF_VAR_target_account_id="${TF_LAB_TEST_ACCOUNT_ID}"
-export TF_VAR_source_aws_profile="week2-source"
-export TF_VAR_target_aws_profile="week2-target"
-
-export TF_VAR_source_operator_role_arn="arn:aws:iam::${TF_LAB_DEV_ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>"
-
-export TF_VAR_lab_role_boundary_name="WorkloadLabRoleBoundary"
-export TF_VAR_lab_role_boundary_path="/week2/"
-export TF_VAR_lab_bucket_name_prefix="aws-security-week2-"
-
-export TF_VAR_approved_bucket_name="aws-security-week2-<unique-value>-approved"
-export TF_VAR_unrelated_bucket_name="aws-security-week2-<unique-value>-unrelated"
-```
-
-These values are not credentials, but the local environment and Terraform
-state are uncommitted operator data. Verify `git status` before every commit.
-
 ## Initialize, validate, and plan
 
 ### Why two SSO logins are required
@@ -642,10 +958,10 @@ Terraform manages:
 
 - `CrossAccountCallerRole` under `/week2/exercise1/`;
 - `UntrustedCrossAccountCallerRole` under `/week2/exercise1/`;
-- a permissions boundary on both roles;
-- a trust policy on both roles allowing the exact
-  `TF_VAR_source_operator_role_arn` principal;
-- an inline policy on each role allowing `sts:AssumeRole` only for
+- A permissions boundary on both roles;.
+- A trust policy on both roles allowing the exact
+  `TF_VAR_source_operator_role_arn` principal;.
+- An inline policy on each role allowing `sts:AssumeRole` only for
   `CrossAccountReadRole` in the target account.
 
 The untrusted role intentionally has the same identity-side `sts:AssumeRole`
@@ -657,14 +973,14 @@ must come from the target trust policy, not from a missing source policy.
 Terraform manages:
 
 - `CrossAccountReadRole` under `/week2/exercise1/`;
-- its required `WorkloadLabRoleBoundary` attachment;
-- a trust policy permitting only `CrossAccountCallerRole` from the source
-  account;
-- an inline policy allowing `s3:ListBucket` and `s3:GetBucketLocation` on the
-  approved bucket and `s3:GetObject` on one approved object;
-- an approved S3 bucket and object;
-- an unrelated S3 bucket and object for a negative resource-scope test;
-- public-access blocks, bucket-owner-enforced ownership, SSE-S3 encryption,
+- Its required `WorkloadLabRoleBoundary` attachment;.
+- A trust policy permitting only `CrossAccountCallerRole` from the source
+  account;.
+- An inline policy allowing `s3:ListBucket` and `s3:GetBucketLocation` on the
+  approved bucket and `s3:GetObject` on one approved object;.
+- An approved S3 bucket and object;.
+- An unrelated S3 bucket and object for a negative resource-scope test;.
+- Public-access blocks, bucket-owner-enforced ownership, SSE-S3 encryption,
   versioning, and seven-day lifecycle cleanup on both buckets.
 
 The persistent boundary policies are read as data sources and are not imported
@@ -927,12 +1243,12 @@ aws cloudtrail lookup-events \
 
 For each approved and denied attempt, record:
 
-- calling principal ARN;
-- requested target role ARN;
-- session name;
-- source IP and event time;
-- resulting assumed-role ARN for successful requests;
-- the policy layer inferred to have allowed or blocked the request.
+- Calling principal ARN;.
+- Requested target role ARN;.
+- Session name;.
+- Source IP and event time;.
+- Resulting assumed-role ARN for successful requests;.
+- The policy layer inferred to have allowed or blocked the request.
 
 Consult the centralized organization trail if the event is not present in
 regional Event History.
@@ -1046,7 +1362,7 @@ inspect `CrossAccountReadRole` under `/week2/exercise1/`:
   `CrossAccountCallerRole` ARN should be trusted. The untrusted caller and the
   source account root should not appear.
 - **Permissions:** the inline `ReadOnlyApprovedExerciseResource` policy should
-  grant:
+  grant:.
   - `s3:GetBucketLocation` and `s3:ListBucket` on the approved bucket;
   - `s3:GetObject` on only `exercise-1/allowed.txt` in that bucket.
 - **Permissions boundary:** `WorkloadLabRoleBoundary` should be attached.
@@ -1068,11 +1384,11 @@ WorkloadLabRoleBoundary
 
 Inspect:
 
-- the policy path `/week2/`;
-- the current default policy version;
-- the permitted STS role path and the two lab account IDs;
-- the permitted S3 lab bucket-name prefix;
-- the roles using the policy as a permissions boundary.
+- The policy path `/week2/`;.
+- The current default policy version;.
+- The permitted STS role path and the two lab account IDs;.
+- The permitted S3 lab bucket-name prefix;.
+- The roles using the policy as a permissions boundary.
 
 The boundary establishes maximum permissions for exercise-created roles. An
 action still requires an identity-policy Allow. This is why the target role
@@ -1138,10 +1454,10 @@ is another reason not to run the exercise there.
 
 In each lab account, open **CloudTrail → Event history** and filter for:
 
-- **Event source:** `sts.amazonaws.com`;
-- **Event name:** `AssumeRole`;
-- the approved and untrusted caller role names;
-- the target role name.
+- **Event source:** `sts.amazonaws.com`;.
+- **Event name:** `AssumeRole`;.
+- The approved and untrusted caller role names;.
+- The target role name.
 
 For successful assumptions, expand the event and inspect
 `userIdentity`, `requestParameters.roleArn`, `requestParameters.roleSessionName`,
@@ -1170,3 +1486,17 @@ remains in both accounts for later exercises. Remove the test users' temporary
 Use `terraform show` to verify that the Exercise 1 state is empty. A normal plan
 after destruction will propose recreating the exercise and should be run only
 when the exercise is intentionally repeated.
+
+## References
+
+- [AWS cross-account resource access](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html).
+- [AWS cross-account policy evaluation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic-cross-account.html).
+- [IAM role trust policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_manage_modify.html).
+- [IAM permissions boundaries](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html).
+- [IAM Identity Center users and groups](https://docs.aws.amazon.com/singlesignon/latest/userguide/users-groups-provisioning.html).
+- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html).
+- [AWS CLI IAM Identity Center authentication](../../../sso_auth.md).
+- [AWS CLI role configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html).
+- [AWS STS `AssumeRole`](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html).
+- [AWS CloudTrail event history](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html).
+- [Amazon S3 policy actions and resources](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazons3.html).

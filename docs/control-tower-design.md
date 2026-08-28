@@ -10,14 +10,14 @@ The design separates the initial landing-zone bootstrap from ongoing account pro
 
 The architecture is designed to provide:
 
-- strong AWS account-level isolation
-- centralized governance through AWS Control Tower
-- repeatable infrastructure through Terraform
-- least-privilege administrative access
-- centralized account vending through AFT
-- separation of security, networking, automation, and workload responsibilities
-- an idempotent bootstrap process
-- a clean transition from bootstrap-time resources to steady-state account provisioning
+- Strong AWS account-level isolation.
+- Centralized governance through AWS Control Tower.
+- Repeatable infrastructure through Terraform.
+- Least-privilege administrative access.
+- Centralized account vending through AFT.
+- Separation of security, networking, automation, and workload responsibilities.
+- An idempotent bootstrap process.
+- A clean transition from bootstrap-time resources to steady-state account provisioning.
 
 ## High-Level Organization Structure
 
@@ -58,12 +58,12 @@ The environment has several distinct control-plane layers.
 
 Organizations defines:
 
-- the organization root
-- organizational units
-- account membership
-- service control policies
-- resource control policies
-- delegated administrator relationships
+- The organization root.
+- Organizational units.
+- Account membership.
+- Service control policies.
+- Resource control policies.
+- Delegated administrator relationships.
 
 OUs are governance and policy boundaries, not merely folders.
 
@@ -73,14 +73,14 @@ Control Tower provides an opinionated governance layer over AWS Organizations an
 
 It manages the landing zone and coordinates capabilities such as:
 
-- governed OUs
-- shared accounts
-- mandatory controls
-- optional controls
-- logging and compliance infrastructure
-- account enrollment
-- Account Factory
-- IAM Identity Center integration
+- Governed OUs.
+- Shared accounts.
+- Mandatory controls.
+- Optional controls.
+- Logging and compliance infrastructure.
+- Account enrollment.
+- Account Factory.
+- IAM Identity Center integration.
 
 Control Tower is not a replacement for Organizations, IAM, Config, CloudTrail, Security Hub, GuardDuty, or other underlying services.
 
@@ -112,11 +112,11 @@ It runs in a dedicated AFT management account and accepts Git-based Terraform ac
 
 AFT is responsible for:
 
-- account creation and update requests
-- invoking the Control Tower account-provisioning workflow
-- applying global account customizations
-- applying targeted account customizations
-- recording account-request metadata and history
+- Account creation and update requests.
+- Invoking the Control Tower account-provisioning workflow.
+- Applying global account customizations.
+- Applying targeted account customizations.
+- Recording account-request metadata and history.
 
 AFT is not intended to deploy normal application resources such as EC2 instances or application stacks.
 
@@ -139,7 +139,8 @@ terraform/
 └── lab/
     └── week2/
         ├── baseline/       # Persistent lab-role boundaries in Dev Lab and Test Lab
-        └── exercise1/     # Disposable cross-account IAM exercise resources
+        ├── exercise1/     # Disposable cross-account AssumeRole exercise resources
+        └── exercise2/     # Disposable trust-policy hardening exercise resources
 ```
 
 Each directory is an independent Terraform root with a distinct state key. The AFT roots run in this order:
@@ -206,17 +207,17 @@ Automatic account enrollment governs what happens to eligible accounts created o
 
 This setting is distinct from account creation through Control Tower Account Factory:
 
-- the AFT management account is provisioned by the built-in Control Tower Account Factory and is enrolled as part of that workflow;
-- after AFT is operational, AFT invokes the Control Tower account-provisioning workflow for ordinary accounts;
-- neither workflow depends on general automatic account enrollment being enabled.
+- The AFT management account is provisioned by the built-in Control Tower Account Factory and is enrolled as part of that workflow;.
+- After AFT is operational, AFT invokes the Control Tower account-provisioning workflow for ordinary accounts;.
+- Neither workflow depends on general automatic account enrollment being enabled.
 
 Leaving automatic enrollment off supports the following controls:
 
-- AFT remains the standard post-bootstrap account-vending path;
-- enrollment of accounts created outside Account Factory remains explicit and reviewable;
-- moving an existing account into a governed OU does not trigger unexpected Control Tower changes;
-- accounts that may not meet Control Tower enrollment prerequisites are not enrolled automatically;
-- governance transitions remain deliberate operations.
+- AFT remains the standard post-bootstrap account-vending path;.
+- Enrollment of accounts created outside Account Factory remains explicit and reviewable;.
+- Moving an existing account into a governed OU does not trigger unexpected Control Tower changes;.
+- Accounts that may not meet Control Tower enrollment prerequisites are not enrolled automatically;.
+- Governance transitions remain deliberate operations.
 
 Before `terraform/aft/platform/` runs, operators must verify that the AFT management account is enrolled successfully and visible in Control Tower. OU membership by itself is not evidence of enrollment.
 
@@ -226,13 +227,13 @@ Automatic enrollment should be enabled only if the operating model changes to re
 
 After AFT is operational, accounts such as the following should normally be created through AFT account requests:
 
-- Automation / Tooling
-- Network
-- Shared Services
-- application development accounts
-- application production accounts
-- sandbox accounts
-- other specialized member accounts
+- Automation / Tooling.
+- Network.
+- Shared Services.
+- Application development accounts.
+- Application production accounts.
+- Sandbox accounts.
+- Other specialized member accounts.
 
 Conceptually:
 
@@ -288,14 +289,14 @@ Typical accounts include:
 
 Owns or administers shared networking capabilities such as:
 
-- Transit Gateway
-- VPC IPAM
-- shared VPC/subnet infrastructure where appropriate
-- Route 53 Resolver infrastructure
-- centralized ingress/egress
-- AWS Network Firewall
-- hybrid connectivity
-- AWS RAM networking shares
+- Transit Gateway.
+- VPC IPAM.
+- Shared VPC/subnet infrastructure where appropriate.
+- Route 53 Resolver infrastructure.
+- Centralized ingress/egress.
+- AWS Network Firewall.
+- Hybrid connectivity.
+- AWS RAM networking shares.
 
 ### Shared Services
 
@@ -303,10 +304,10 @@ Hosts shared platform services consumed by workloads.
 
 Examples may include:
 
-- internal tooling
-- shared directory or identity integrations
-- common build/artifact services
-- shared operational systems
+- Internal tooling.
+- Shared directory or identity integrations.
+- Common build/artifact services.
+- Shared operational systems.
 
 ### Automation / Tooling
 
@@ -362,11 +363,11 @@ The Organizations management account is a high-trust administrative boundary.
 
 It should:
 
-- host as little workload infrastructure as practical
-- be used only for operations requiring the management account
-- delegate supported services to member accounts
-- avoid general-purpose CI/CD and application deployment
-- use narrowly scoped automation roles
+- Host as little workload infrastructure as practical.
+- Be used only for operations requiring the management account.
+- Delegate supported services to member accounts.
+- Avoid general-purpose CI/CD and application deployment.
+- Use narrowly scoped automation roles.
 
 SCPs do not constrain principals in the management account, which makes management-account permissions especially sensitive.
 
@@ -410,10 +411,10 @@ A routine rerun of a converged Terraform root should produce no changes unless c
 
 The architecture deliberately separates:
 
-- governance-plane bootstrap
-- account vending
-- infrastructure deployment
-- workload deployment
+- Governance-plane bootstrap.
+- Account vending.
+- Infrastructure deployment.
+- Workload deployment.
 
 This keeps the Control Tower management account small, makes account boundaries meaningful, and allows AFT to become the standard post-bootstrap account-provisioning mechanism.
 
@@ -423,34 +424,34 @@ Use the following AWS documentation when implementing or operating the Control T
 
 ### Landing zone and shared accounts
 
-- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html)
-- [Getting started with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/getting-started-with-control-tower.html)
-- [AWS Control Tower shared accounts](https://docs.aws.amazon.com/controltower/latest/userguide/how-control-tower-works.html)
-- [AWS Control Tower landing-zone APIs](https://docs.aws.amazon.com/controltower/latest/APIReference/Welcome.html)
-- [`CreateLandingZone` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_CreateLandingZone.html)
+- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html).
+- [Getting started with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/getting-started-with-control-tower.html).
+- [AWS Control Tower shared accounts](https://docs.aws.amazon.com/controltower/latest/userguide/how-control-tower-works.html).
+- [AWS Control Tower landing-zone APIs](https://docs.aws.amazon.com/controltower/latest/APIReference/Welcome.html).
+- [`CreateLandingZone` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_CreateLandingZone.html).
 
 ### OU governance, baselines, controls, and drift
 
-- [Register an existing organizational unit](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html)
-- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html)
-- [`EnableBaseline` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_EnableBaseline.html)
-- [`ListBaselines` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_ListBaselines.html)
-- [`ListEnabledBaselines` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_ListEnabledBaselines.html)
-- [AWS Control Tower controls](https://docs.aws.amazon.com/controltower/latest/controlreference/controls.html)
-- [Detect and resolve drift in AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/drift.html)
+- [Register an existing organizational unit](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html).
+- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html).
+- [`EnableBaseline` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_EnableBaseline.html).
+- [`ListBaselines` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_ListBaselines.html).
+- [`ListEnabledBaselines` API](https://docs.aws.amazon.com/controltower/latest/APIReference/API_ListEnabledBaselines.html).
+- [AWS Control Tower controls](https://docs.aws.amazon.com/controltower/latest/controlreference/controls.html).
+- [Detect and resolve drift in AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/drift.html).
 
 ### Account provisioning and AFT
 
-- [Provision and manage accounts with Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html)
-- [Enroll an existing AWS account](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html)
-- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html)
-- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html)
-- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html)
-- [AFT account customizations](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-customization-options.html)
+- [Provision and manage accounts with Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html).
+- [Enroll an existing AWS account](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html).
+- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html).
+- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html).
+- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html).
+- [AFT account customizations](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-customization-options.html).
 
 ### Organizations and IAM Identity Center
 
-- [AWS Organizations concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html)
-- [Best practices for the Organizations management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html)
-- [IAM Identity Center integration with AWS Organizations](https://docs.aws.amazon.com/singlesignon/latest/userguide/organization-instances-identity-center.html)
-- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html)
+- [AWS Organizations concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html).
+- [Best practices for the Organizations management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html).
+- [IAM Identity Center integration with AWS Organizations](https://docs.aws.amazon.com/singlesignon/latest/userguide/organization-instances-identity-center.html).
+- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html).

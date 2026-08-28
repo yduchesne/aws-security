@@ -131,9 +131,10 @@ variable "common_tags" {
   type        = map(string)
 
   default = {
-    Project   = "aws-security-exercises"
-    ManagedBy = "Terraform"
-    Week      = "2"
-    Exercise  = "1"
+    Project    = "aws-security-exercises"
+    ManagedBy  = "Terraform"
+    Week       = "2"
+    Curriculum = "Core"
+    Exercise   = "1"
   }
 }

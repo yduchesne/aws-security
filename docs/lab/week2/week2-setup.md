@@ -7,8 +7,9 @@ Identity Center access, the persistent permissions-boundary baseline, AWS CLI
 profiles, and temporary exercise-user assignments.
 
 Read the general [lab setup](../lab-setup.md) first. Exercise-specific commands
-for Exercise 1 are in [`exercise1-instructions.md`](exercise1/exercise1-instructions.md), and the exercise catalog
-is in [`week2-summary.md`](week2-summary.md).
+for Exercise 1 are in [`exercise1-instructions.md`](exercise1/exercise1-instructions.md),
+and Exercise 2 in [`exercise2-instructions.md`](exercise2/exercise2-instructions.md).
+The exercise catalog is in [`week2-summary.md`](week2-summary.md).
 
 ## Prerequisites
 
@@ -94,7 +95,7 @@ Set:
 - `lab_account_ids.test` to the Test Lab/target account ID;
 - `lab_baseline_aws_profiles.dev` and `.test` to the authenticated trusted
   setup profile names;
-- the state bucket and Region during backend initialization.
+- The state bucket and Region during backend initialization.
 
 The baseline and workload-access roots intentionally share
 `TF_VAR_lab_account_ids`; the baseline does not use separate

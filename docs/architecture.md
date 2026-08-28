@@ -10,14 +10,14 @@ The design separates the initial landing-zone bootstrap from ongoing account pro
 
 The architecture is designed to provide:
 
-- strong AWS account-level isolation
-- centralized governance through AWS Control Tower
-- repeatable infrastructure through Terraform
-- least-privilege administrative access
-- centralized account vending through AFT
-- separation of security, networking, automation, and workload responsibilities
-- an idempotent bootstrap process
-- a clean transition from bootstrap-time resources to steady-state account provisioning
+- Strong AWS account-level isolation.
+- Centralized governance through AWS Control Tower.
+- Repeatable infrastructure through Terraform.
+- Least-privilege administrative access.
+- Centralized account vending through AFT.
+- Separation of security, networking, automation, and workload responsibilities.
+- An idempotent bootstrap process.
+- A clean transition from bootstrap-time resources to steady-state account provisioning.
 
 ## High-Level Organization Structure
 
@@ -58,12 +58,12 @@ The environment has several distinct control-plane layers.
 
 Organizations defines:
 
-- the organization root
-- organizational units
-- account membership
-- service control policies
-- resource control policies
-- delegated administrator relationships
+- The organization root.
+- Organizational units.
+- Account membership.
+- Service control policies.
+- Resource control policies.
+- Delegated administrator relationships.
 
 OUs are governance and policy boundaries, not merely folders.
 
@@ -73,14 +73,14 @@ Control Tower provides an opinionated governance layer over AWS Organizations an
 
 It manages the landing zone and coordinates capabilities such as:
 
-- governed OUs
-- shared accounts
-- mandatory controls
-- optional controls
-- logging and compliance infrastructure
-- account enrollment
-- Account Factory
-- IAM Identity Center integration
+- Governed OUs.
+- Shared accounts.
+- Mandatory controls.
+- Optional controls.
+- Logging and compliance infrastructure.
+- Account enrollment.
+- Account Factory.
+- IAM Identity Center integration.
 
 Control Tower is not a replacement for Organizations, IAM, Config, CloudTrail, Security Hub, GuardDuty, or other underlying services.
 
@@ -112,11 +112,11 @@ It runs in a dedicated AFT management account and accepts Git-based Terraform ac
 
 AFT is responsible for:
 
-- account creation and update requests
-- invoking the Control Tower account-provisioning workflow
-- applying global account customizations
-- applying targeted account customizations
-- recording account-request metadata and history
+- Account creation and update requests.
+- Invoking the Control Tower account-provisioning workflow.
+- Applying global account customizations.
+- Applying targeted account customizations.
+- Recording account-request metadata and history.
 
 AFT is not intended to deploy normal application resources such as EC2 instances or application stacks.
 
@@ -139,7 +139,8 @@ terraform/
 └── lab/
     └── week2/
         ├── baseline/       # Persistent lab-role boundaries in Dev Lab and Test Lab
-        └── exercise1/     # Disposable cross-account IAM exercise resources
+        ├── exercise1/     # Disposable cross-account AssumeRole exercise resources
+        └── exercise2/     # Disposable trust-policy hardening exercise resources
 ```
 
 Each directory is an independent Terraform root with a distinct state key. The AFT roots run in this order:
@@ -202,13 +203,13 @@ Workload account assignments remain centrally owned by `terraform/identity_cente
 
 After AFT is operational, accounts such as the following should normally be created through AFT account requests:
 
-- Automation / Tooling
-- Network
-- Shared Services
-- application development accounts
-- application production accounts
-- sandbox accounts
-- other specialized member accounts
+- Automation / Tooling.
+- Network.
+- Shared Services.
+- Application development accounts.
+- Application production accounts.
+- Sandbox accounts.
+- Other specialized member accounts.
 
 Conceptually:
 
@@ -260,14 +261,14 @@ Typical accounts include:
 
 Owns or administers shared networking capabilities such as:
 
-- Transit Gateway
-- VPC IPAM
-- shared VPC/subnet infrastructure where appropriate
-- Route 53 Resolver infrastructure
-- centralized ingress/egress
-- AWS Network Firewall
-- hybrid connectivity
-- AWS RAM networking shares
+- Transit Gateway.
+- VPC IPAM.
+- Shared VPC/subnet infrastructure where appropriate.
+- Route 53 Resolver infrastructure.
+- Centralized ingress/egress.
+- AWS Network Firewall.
+- Hybrid connectivity.
+- AWS RAM networking shares.
 
 ### Shared Services
 
@@ -275,10 +276,10 @@ Hosts shared platform services consumed by workloads.
 
 Examples may include:
 
-- internal tooling
-- shared directory or identity integrations
-- common build/artifact services
-- shared operational systems
+- Internal tooling.
+- Shared directory or identity integrations.
+- Common build/artifact services.
+- Shared operational systems.
 
 ### Automation / Tooling
 
@@ -334,11 +335,11 @@ The Organizations management account is a high-trust administrative boundary.
 
 It should:
 
-- host as little workload infrastructure as practical
-- be used only for operations requiring the management account
-- delegate supported services to member accounts
-- avoid general-purpose CI/CD and application deployment
-- use narrowly scoped automation roles
+- Host as little workload infrastructure as practical.
+- Be used only for operations requiring the management account.
+- Delegate supported services to member accounts.
+- Avoid general-purpose CI/CD and application deployment.
+- Use narrowly scoped automation roles.
 
 SCPs do not constrain principals in the management account, which makes management-account permissions especially sensitive.
 
@@ -382,10 +383,10 @@ A routine rerun of a converged Terraform root should produce no changes unless c
 
 The architecture deliberately separates:
 
-- governance-plane bootstrap
-- account vending
-- infrastructure deployment
-- workload deployment
+- Governance-plane bootstrap.
+- Account vending.
+- Infrastructure deployment.
+- Workload deployment.
 
 This keeps the Control Tower management account small, makes account boundaries meaningful, and allows AFT to become the standard post-bootstrap account-provisioning mechanism.
 
@@ -395,33 +396,33 @@ The following AWS documentation is authoritative for the AWS service behavior de
 
 ### AWS Organizations and account boundaries
 
-- [What is AWS Organizations?](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html)
-- [AWS Organizations terminology and concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html)
-- [Best practices for the management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html)
-- [Service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html)
-- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html)
+- [What is AWS Organizations?](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html).
+- [AWS Organizations terminology and concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html).
+- [Best practices for the management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html).
+- [Service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html).
+- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html).
 
 ### AWS Control Tower and Account Factory
 
-- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html)
-- [AWS Control Tower shared accounts](https://docs.aws.amazon.com/controltower/latest/userguide/how-control-tower-works.html)
-- [Register an existing organizational unit with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html)
-- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html)
-- [Provision and manage accounts with Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html)
-- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html)
-- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html)
+- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html).
+- [AWS Control Tower shared accounts](https://docs.aws.amazon.com/controltower/latest/userguide/how-control-tower-works.html).
+- [Register an existing organizational unit with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html).
+- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html).
+- [Provision and manage accounts with Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html).
+- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html).
+- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html).
 
 ### Identity and cross-account access
 
-- [What is IAM Identity Center?](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)
-- [IAM roles and temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)
-- [Cross-account resource access in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html)
-- [IAM best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
+- [What is IAM Identity Center?](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html).
+- [IAM roles and temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html).
+- [Cross-account resource access in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html).
+- [IAM best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html).
 
 ### Central security and networking services
 
-- [AWS CloudTrail concepts](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-concepts.html)
-- [AWS Config concepts](https://docs.aws.amazon.com/config/latest/developerguide/config-concepts.html)
-- [AWS Transit Gateway](https://docs.aws.amazon.com/vpc/latest/tgw/what-is-transit-gateway.html)
-- [VPC IP Address Manager](https://docs.aws.amazon.com/vpc/latest/ipam/what-it-is-ipam.html)
-- [Sharing AWS resources with AWS RAM](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html)
+- [AWS CloudTrail concepts](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-concepts.html).
+- [AWS Config concepts](https://docs.aws.amazon.com/config/latest/developerguide/config-concepts.html).
+- [AWS Transit Gateway](https://docs.aws.amazon.com/vpc/latest/tgw/what-is-transit-gateway.html).
+- [VPC IP Address Manager](https://docs.aws.amazon.com/vpc/latest/ipam/what-it-is-ipam.html).
+- [Sharing AWS resources with AWS RAM](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html).

@@ -1,3 +1,4 @@
+# Curriculum: Core
 locals {
   role_path                = "/week2/exercise1/"
   source_role_boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"

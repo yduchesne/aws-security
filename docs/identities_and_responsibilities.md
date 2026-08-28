@@ -42,11 +42,11 @@ terraform/aft/platform
 
 Its responsibilities include:
 
-- establishing and maintaining the initial Organizations and Control Tower configuration;
-- creating and governing the dedicated AFT OU;
-- submitting the AFT management account request through Control Tower Account Factory;
-- launching the AFT platform module from the Control Tower management account;
-- verifying successful convergence before handoff to steady-state operations.
+- Establishing and maintaining the initial Organizations and Control Tower configuration;.
+- Creating and governing the dedicated AFT OU;.
+- Submitting the AFT management account request through Control Tower Account Factory;.
+- Launching the AFT platform module from the Control Tower management account;.
+- Verifying successful convergence before handoff to steady-state operations.
 
 Although the AFT platform module is launched with management-account credentials, it installs operational resources into the AFT management account and Control Tower shared accounts as required.
 
@@ -248,13 +248,13 @@ For a small environment, one named identity with separate read-only and elevated
 
 Every human identity must:
 
-- belong to one accountable person;
-- use MFA appropriate to the identity source;
-- avoid shared credentials;
-- receive access through reviewed group membership;
-- have unnecessary assignments removed promptly;
-- be disabled promptly during offboarding;
-- be included in periodic group, permission-set, and account-assignment reviews.
+- Belong to one accountable person;.
+- Use MFA appropriate to the identity source;.
+- Avoid shared credentials;.
+- Receive access through reviewed group membership;.
+- Have unnecessary assignments removed promptly;.
+- Be disabled promptly during offboarding;.
+- Be included in periodic group, permission-set, and account-assignment reviews.
 
 ### Break-glass access
 
@@ -306,10 +306,10 @@ TF_VAR_sso_identity_store_admin_last_name
 
 Responsibilities include:
 
-- creating, reading, updating, and deleting Identity Center users;
-- creating, reading, updating, and deleting groups;
-- managing group memberships;
-- performing identity onboarding, role-change, and offboarding tasks.
+- Creating, reading, updating, and deleting Identity Center users;.
+- Creating, reading, updating, and deleting groups;.
+- Managing group memberships;.
+- Performing identity onboarding, role-change, and offboarding tasks.
 
 This persona does not receive permission-set or account-assignment APIs through its project permission set.
 
@@ -339,10 +339,10 @@ TF_VAR_sso_permission_set_admin_last_name
 
 Responsibilities include:
 
-- creating and updating permission-set definitions;
-- managing managed-policy attachments and customer-managed-policy references;
-- managing inline policies and permission boundaries;
-- managing permission-set metadata and session settings.
+- Creating and updating permission-set definitions;.
+- Managing managed-policy attachments and customer-managed-policy references;.
+- Managing inline policies and permission boundaries;.
+- Managing permission-set metadata and session settings.
 
 Its permission set explicitly denies account-assignment creation and deletion. Permission definition is therefore separated from assigning that permission to a principal in an AWS account.
 
@@ -372,10 +372,10 @@ TF_VAR_sso_access_assignment_admin_last_name
 
 Responsibilities include:
 
-- discovering approved users, groups, permission sets, and AWS accounts;
-- creating and deleting account assignments;
-- monitoring assignment creation and deletion status;
-- assigning existing, approved permission sets to authorized principals and accounts.
+- Discovering approved users, groups, permission sets, and AWS accounts;.
+- Creating and deleting account assignments;.
+- Monitoring assignment creation and deletion status;.
+- Assigning existing, approved permission sets to authorized principals and accounts.
 
 Its permission set explicitly denies permission-set creation and policy mutation. Access assignment is therefore separated from permission definition.
 
@@ -454,16 +454,16 @@ Multiple administrators
 
 For all three administrative personas:
 
-- assign different accountable human owners where possible;
-- require strong MFA;
-- retain the default one-hour privileged session duration unless a shorter supported duration is adopted;
-- prohibit shared credentials and unattended use;
-- require independent review for protected-group membership;
-- require independent review for administrative permission-set changes;
-- require additional approval for management-account assignments;
-- alert on user, group, membership, permission-set, and assignment changes;
-- periodically reconcile live resources with Terraform and approved access records;
-- never use these identities for AFT, CI/CD, or other automation.
+- Assign different accountable human owners where possible;.
+- Require strong MFA;.
+- Retain the default one-hour privileged session duration unless a shorter supported duration is adopted;.
+- Prohibit shared credentials and unattended use;.
+- Require independent review for protected-group membership;.
+- Require independent review for administrative permission-set changes;.
+- Require additional approval for management-account assignments;.
+- Alert on user, group, membership, permission-set, and assignment changes;.
+- Periodically reconcile live resources with Terraform and approved access records;.
+- Never use these identities for AFT, CI/CD, or other automation.
 
 The intended future state is a reviewed Terraform workflow using OIDC-federated automation. Humans propose and independently approve changes; a protected deployment role applies them and cannot change its own trust or permissions.
 
@@ -513,23 +513,23 @@ Temporary role session in the AFT management account
 
 The Identity Center user may be used for:
 
-- inspecting the AFT deployment;
-- reviewing pipeline and operational status;
-- troubleshooting failed AFT workflows;
-- reviewing logs and configuration;
-- performing explicitly authorized administrative work;
-- emergency intervention when automated operations cannot recover safely.
+- Inspecting the AFT deployment;.
+- Reviewing pipeline and operational status;.
+- Troubleshooting failed AFT workflows;.
+- Reviewing logs and configuration;.
+- Performing explicitly authorized administrative work;.
+- Emergency intervention when automated operations cannot recover safely.
 
 ### Inappropriate responsibilities
 
 The Identity Center user must not be used for:
 
-- unattended Terraform runs;
-- CI/CD pipeline credentials;
-- storing SSO session credentials in a pipeline or secret store;
-- normal AFT internal processing;
-- general organization-wide automation;
-- a shared automation or service identity.
+- Unattended Terraform runs;.
+- CI/CD pipeline credentials;.
+- Storing SSO session credentials in a pipeline or secret store;.
+- Normal AFT internal processing;.
+- General organization-wide automation;.
+- A shared automation or service identity.
 
 Where possible, Account Factory should reference an appropriate named human administrator rather than a shared user named for automation.
 
@@ -587,10 +587,10 @@ Terraform operation
 
 Suitable source identities include:
 
-- GitHub Actions using OIDC;
-- GitLab CI using OIDC;
-- AWS CodeBuild using its service role;
-- another CI platform using OIDC or SAML federation.
+- GitHub Actions using OIDC;.
+- GitLab CI using OIDC;.
+- AWS CodeBuild using its service role;.
+- Another CI platform using OIDC or SAML federation.
 
 The source automation identity should only be able to assume explicitly authorized target roles. The target role defines the permissions available in its account.
 
@@ -600,12 +600,12 @@ Production and non-production privileges should be independently assignable. Net
 
 Do not use:
 
-- long-lived IAM user access keys for CI/CD;
-- exported IAM Identity Center browser-session credentials in pipelines;
-- the human AFT account owner as a service identity;
+- Long-lived IAM user access keys for CI/CD;.
+- Exported IAM Identity Center browser-session credentials in pipelines;.
+- The human AFT account owner as a service identity;.
 - `ct-bootstrap` for steady-state automation;
-- a single unrestricted organization-wide automation role;
-- the Organizations management account as a general CI/CD host.
+- A single unrestricted organization-wide automation role;.
+- The Organizations management account as a general CI/CD host.
 
 ## Management Account Boundary
 
@@ -652,43 +652,43 @@ The following AWS documentation supports the identity and responsibility model i
 
 ### IAM Identity Center and human access
 
-- [What is IAM Identity Center?](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)
-- [IAM Identity Center integration with AWS Organizations](https://docs.aws.amazon.com/singlesignon/latest/userguide/organization-instances-identity-center.html)
-- [Create and manage permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html)
-- [Assign user or group access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html)
-- [AWS access portal and temporary credentials](https://docs.aws.amazon.com/singlesignon/latest/userguide/using-the-portal.html)
-- [Provision users and groups](https://docs.aws.amazon.com/singlesignon/latest/userguide/users-groups-provisioning.html)
-- [Multi-factor authentication in IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/mfa.html)
-- [IAM Identity Center security best practices](https://docs.aws.amazon.com/singlesignon/latest/userguide/security-best-practices.html)
-- [IAM Identity Center CloudTrail logging](https://docs.aws.amazon.com/singlesignon/latest/userguide/monitoring-cloudtrail.html)
+- [What is IAM Identity Center?](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html).
+- [IAM Identity Center integration with AWS Organizations](https://docs.aws.amazon.com/singlesignon/latest/userguide/organization-instances-identity-center.html).
+- [Create and manage permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html).
+- [Assign user or group access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html).
+- [AWS access portal and temporary credentials](https://docs.aws.amazon.com/singlesignon/latest/userguide/using-the-portal.html).
+- [Provision users and groups](https://docs.aws.amazon.com/singlesignon/latest/userguide/users-groups-provisioning.html).
+- [Multi-factor authentication in IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/mfa.html).
+- [IAM Identity Center security best practices](https://docs.aws.amazon.com/singlesignon/latest/userguide/security-best-practices.html).
+- [IAM Identity Center CloudTrail logging](https://docs.aws.amazon.com/singlesignon/latest/userguide/monitoring-cloudtrail.html).
 
 ### IAM roles and temporary credentials
 
-- [IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/id.html)
-- [IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)
-- [Temporary security credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp.html)
-- [IAM best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
-- [Cross-account resource access in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html)
-- [`AssumeRole` API](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
+- [IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/id.html).
+- [IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html).
+- [Temporary security credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp.html).
+- [IAM best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html).
+- [Cross-account resource access in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html).
+- [`AssumeRole` API](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html).
 
 ### Workload identity federation and CI/CD
 
-- [IAM roles for web identity federation](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html)
-- [Create an OpenID Connect identity provider in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html)
-- [Configuring OpenID Connect in AWS for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)
-- [CodeBuild service role](https://docs.aws.amazon.com/codebuild/latest/userguide/setting-up-service-role.html)
+- [IAM roles for web identity federation](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html).
+- [Create an OpenID Connect identity provider in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html).
+- [Configuring OpenID Connect in AWS for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services).
+- [CodeBuild service role](https://docs.aws.amazon.com/codebuild/latest/userguide/setting-up-service-role.html).
 
 ### Control Tower, Account Factory, and AFT roles
 
-- [Control Tower users, groups, and roles](https://docs.aws.amazon.com/controltower/latest/userguide/users-groups-roles.html)
-- [Provision and manage accounts with Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html)
-- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html)
-- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html)
-- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html)
-- [AFT account customization options](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-customization-options.html)
+- [Control Tower users, groups, and roles](https://docs.aws.amazon.com/controltower/latest/userguide/users-groups-roles.html).
+- [Provision and manage accounts with Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html).
+- [Account Factory for Terraform overview](https://docs.aws.amazon.com/controltower/latest/userguide/aft-overview.html).
+- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html).
+- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html).
+- [AFT account customization options](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-customization-options.html).
 
 ### Management-account security boundary
 
-- [Best practices for the AWS Organizations management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html)
-- [SCP effects on permissions](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html)
-- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html)
+- [Best practices for the AWS Organizations management account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices_mgmt-acct.html).
+- [SCP effects on permissions](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html).
+- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html).

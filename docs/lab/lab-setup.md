@@ -29,9 +29,9 @@ evidence.
 
 ## Documentation
 
-- [Lab roadmap](lab-roadmap.md)
-- [AWS CLI IAM Identity Center authentication](../sso_auth.md)
-- [Week 1 exercises](week1/exercises-week1.md)
-- [Week 2 exercise summary](week2/exercises-summary.md)
-- [Week 2 shared setup](week2/week2-setup.md)
-- [Week 2 Exercise 1 setup and execution](week2/exercise1.md)
+- [Lab roadmap](lab-roadmap.md).
+- [AWS CLI IAM Identity Center authentication](../sso_auth.md).
+- [Week 1 exercises](week1/exercises-week1.md).
+- [Week 2 exercise summary](week2/exercises-summary.md).
+- [Week 2 shared setup](week2/week2-setup.md).
+- [Week 2 Exercise 1 setup and execution](week2/exercise1.md).

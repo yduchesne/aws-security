@@ -32,11 +32,11 @@ Before every apply:
 
 Never approve a plan that unexpectedly proposes replacement or deletion of:
 
-- the AWS Organization;
-- the Control Tower landing zone;
-- Control Tower shared accounts;
-- a governed OU baseline;
-- the AFT management account;
+- The AWS Organization;.
+- The Control Tower landing zone;.
+- Control Tower shared accounts;.
+- A governed OU baseline;.
+- The AFT management account;.
 - Control Tower-created IAM Identity Center resources.
 
 Do not use `-auto-approve` for these foundational roots.
@@ -86,6 +86,7 @@ aft/account/terraform.tfstate
 identity-center/aft-access/terraform.tfstate
 aft/platform/terraform.tfstate
 exercises/week2/baseline/terraform.tfstate
+lab/week2/exercise2/terraform.tfstate
 ```
 
 Optional root-specific backend variables are documented in `terraform/.env.example`.
@@ -125,9 +126,9 @@ See [`aft-setup.md`](aft-setup.md) for repository responsibilities and network t
 
 The bootstrap root owns:
 
-- AWS Organizations foundation;
-- foundational non-AFT OUs;
-- Control Tower shared accounts;
+- AWS Organizations foundation;.
+- Foundational non-AFT OUs;.
+- Control Tower shared accounts;.
 - Control Tower landing zone and prerequisites.
 
 It does not own the AFT OU or AFT management account.
@@ -141,11 +142,11 @@ It does not own the AFT OU or AFT management account.
 
 Review the plan carefully. It must not propose:
 
-- replacing the AWS Organization;
-- disabling `SERVICE_CONTROL_POLICY`;
-- removing trusted service access;
-- replacing an existing Control Tower landing zone;
-- replacing Control Tower shared accounts.
+- Replacing the AWS Organization;.
+- Disabling `SERVICE_CONTROL_POLICY`;.
+- Removing trusted service access;.
+- Replacing an existing Control Tower landing zone;.
+- Replacing Control Tower shared accounts.
 
 ### Apply
 
@@ -243,15 +244,15 @@ Verify that the plan creates only project-owned resources. The parent plan shoul
 
 After apply:
 
-- verify the workload groups are initially empty;
-- verify both test users have no memberships or account assignments;
-- manually activate the test users, register MFA, and keep any temporary test access documented and time-bounded;
-- verify Test and Production operator access has no write actions;
-- activate the named human identities as required;
-- register strong MFA;
-- verify the one-hour privileged sessions;
-- test expected allowed and denied operations;
-- document the accountable owner of each persona.
+- Verify the workload groups are initially empty;.
+- Verify both test users have no memberships or account assignments;.
+- Manually activate the test users, register MFA, and keep any temporary test access documented and time-bounded;.
+- Verify Test and Production operator access has no write actions;.
+- Activate the named human identities as required;.
+- Register strong MFA;.
+- Verify the one-hour privileged sessions;.
+- Test expected allowed and denied operations;.
+- Document the accountable owner of each persona.
 
 ### Convergence check
 
@@ -290,7 +291,7 @@ The initial AFT deployment therefore uses one sequential apply command. Terrafor
 
 `terraform/aft/org_unit` creates:
 
-- the dedicated AFT OU;
+- The dedicated AFT OU;.
 - `AWSControlTowerBaseline` version `5.0` for that OU.
 
 The plan must not show:
@@ -324,17 +325,17 @@ AFTPlatformAdministration
 
 It then:
 
-- looks up the existing Account Factory human user using `TF_VAR_sso_aft_user_email`;
-- adds that user to `AFTPlatformAdministrators`;
-- assigns `AFTPlatformAdministration` only to the AFT management account.
+- Looks up the existing Account Factory human user using `TF_VAR_sso_aft_user_email`;.
+- Adds that user to `AFTPlatformAdministrators`;.
+- Assigns `AFTPlatformAdministration` only to the AFT management account.
 
 The root must not create, modify, import, or delete the existing Account Factory user.
 
 The permission set provides:
 
-- read-only AFT troubleshooting access;
-- the AWS-documented CodeConnections console handshake permissions, including `StartOAuthHandshake` and `UpdateConnectionInstallation`;
-- limited start, stop, and retry operations for pipelines in the AFT account.
+- Read-only AFT troubleshooting access;.
+- The AWS-documented CodeConnections console handshake permissions, including `StartOAuthHandshake` and `UpdateConnectionInstallation`;.
+- Limited start, stop, and retry operations for pipelines in the AFT account.
 
 It explicitly denies IAM mutation, Identity Store mutation, permission-set and account-assignment mutation, and Organizations mutation.
 
@@ -352,8 +353,8 @@ aft_enable_vpc = false
 
 It must not create:
 
-- an AFT VPC;
-- NAT gateways;
+- An AFT VPC;.
+- NAT gateways;.
 - AFT interface VPC endpoints.
 
 The four GitHub repositories and their `main` branches must exist before this root runs.
@@ -399,9 +400,9 @@ Restrict the GitHub App installation to the required repositories where practica
 
 AWS references:
 
-- [Create a connection to GitHub](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections-create-github.html)
-- [Update a pending connection](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections-update.html)
-- [AWS CodeConnections concepts](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html)
+- [Create a connection to GitHub](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections-create-github.html).
+- [Update a pending connection](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections-update.html).
+- [AWS CodeConnections concepts](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html).
 
 ## Final Convergence Checks
 
@@ -414,18 +415,18 @@ After CodeConnections authorization, run:
 
 Expected results:
 
-- the Workloads, Dev, Test, and Prod OU baselines remain version `5.0` and `SUCCEEDED`;
-- the AFT OU baseline remains version `5.0` and `SUCCEEDED`;
-- the AFT management account remains enrolled;
-- the Account Factory provisioned product remains `AVAILABLE`;
-- the existing Account Factory user is unchanged;
-- workload groups contain only approved named humans;
-- workload permission sets and assignments match the approved environment matrix;
+- The Workloads, Dev, Test, and Prod OU baselines remain version `5.0` and `SUCCEEDED`;.
+- The AFT OU baseline remains version `5.0` and `SUCCEEDED`;.
+- The AFT management account remains enrolled;.
+- The Account Factory provisioned product remains `AVAILABLE`;.
+- The existing Account Factory user is unchanged;.
+- Workload groups contain only approved named humans;.
+- Workload permission sets and assignments match the approved environment matrix;.
 - `AFTPlatformAdministration` is assigned only to the AFT account;
-- the CodeConnections connection is `AVAILABLE`;
-- AFT pipelines reference the expected repositories and branches;
-- no AFT NAT gateways or interface endpoints exist;
-- all Terraform roots are converged.
+- The CodeConnections connection is `AVAILABLE`;.
+- AFT pipelines reference the expected repositories and branches;.
+- No AFT NAT gateways or interface endpoints exist;.
+- All Terraform roots are converged.
 
 If a plan proposes an unexplained replacement or deletion, stop and investigate rather than applying it.
 
@@ -513,10 +514,10 @@ A normal rerun after successful convergence should produce no changes unless con
 
 ## AWS Documentation
 
-- [Getting started with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/getting-started-with-control-tower.html)
-- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html)
-- [Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html)
-- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html)
-- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html)
-- [Assign IAM Identity Center access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html)
-- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html)
+- [Getting started with AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/getting-started-with-control-tower.html).
+- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html).
+- [Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html).
+- [AFT prerequisites](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html).
+- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html).
+- [Assign IAM Identity Center access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html).
+- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html).
