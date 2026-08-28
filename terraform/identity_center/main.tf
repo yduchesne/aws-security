@@ -98,6 +98,39 @@ resource "aws_identitystore_user" "administrators" {
   }
 }
 
+resource "aws_identitystore_user" "lab_admin" {
+  identity_store_id = local.identity_store_id
+  user_name         = var.sso_lab_admin_email
+  display_name      = "${var.sso_lab_admin_first_name} ${var.sso_lab_admin_last_name}"
+
+  name {
+    given_name  = var.sso_lab_admin_first_name
+    family_name = var.sso_lab_admin_last_name
+  }
+
+  emails {
+    value   = var.sso_lab_admin_email
+    primary = true
+    type    = "work"
+  }
+
+  lifecycle {
+    precondition {
+      condition = !contains([
+        var.sso_identity_store_admin_email,
+        var.sso_permission_set_admin_email,
+        var.sso_access_assignment_admin_email,
+      ], var.sso_lab_admin_email)
+      error_message = "The lab baseline administrator must be distinct from the three central Identity Center administrative personas."
+    }
+
+    precondition {
+      condition     = data.aws_caller_identity.current.account_id == var.management_account_id
+      error_message = "The lab baseline administrator must be managed from the Organizations management account."
+    }
+  }
+}
+
 resource "aws_identitystore_group_membership" "administrators" {
   for_each = local.administrators
 

@@ -1,0 +1,15 @@
+lab_account_ids = {
+  dev  = "111122223333"
+  test = "444455556666"
+}
+
+# Authenticate these trusted setup profiles through IAM Identity Center before
+# running the baseline. They are not the bounded exercise-user profiles.
+lab_baseline_aws_profiles = {
+  dev  = "lab-admin-dev"
+  test = "lab-admin-test"
+}
+
+lab_role_boundary_name = "WorkloadLabRoleBoundary"
+lab_role_boundary_path = "/week2/"
+lab_bucket_name_prefix = "aws-security-week2-"

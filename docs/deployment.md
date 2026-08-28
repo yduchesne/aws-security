@@ -85,6 +85,7 @@ aft/org_unit/terraform.tfstate
 aft/account/terraform.tfstate
 identity-center/aft-access/terraform.tfstate
 aft/platform/terraform.tfstate
+exercises/week2/baseline/terraform.tfstate
 ```
 
 Optional root-specific backend variables are documented in `terraform/.env.example`.
@@ -134,7 +135,8 @@ It does not own the AFT OU or AFT management account.
 ### Plan
 
 ```bash
-./tf.sh --phase bootstrap --fmt --dry-run
+./tf.sh --phase bootstrap --fmt
+./tf.sh --phase bootstrap --dry-run
 ```
 
 Review the plan carefully. It must not propose:
@@ -163,7 +165,8 @@ Control Tower operations are asynchronous. Do not start Identity Center administ
 ### Convergence check
 
 ```bash
-./tf.sh --phase bootstrap --chk --dry-run
+./tf.sh --phase bootstrap --chk
+./tf.sh --phase bootstrap --dry-run
 ```
 
 A converged root should produce no changes, except for reviewed computed-state refreshes.
@@ -182,14 +185,16 @@ Workloads
 Plan the independent root:
 
 ```bash
-./tf.sh --phase workloads --fmt --dry-run
+./tf.sh --phase workloads --fmt
+./tf.sh --phase workloads --dry-run
 ```
 
 The plan must create only the four OUs and four `AWSControlTowerBaseline` version `5.0` instances. It must not create accounts. Apply and verify convergence with:
 
 ```bash
 ./tf.sh --phase workloads --apply
-./tf.sh --phase workloads --chk --dry-run
+./tf.sh --phase workloads --chk
+./tf.sh --phase workloads --dry-run
 ```
 
 Do not submit AFT account requests targeting an environment OU until its baseline has completed successfully. The workload root can otherwise evolve independently of AFT platform deployment.
@@ -208,15 +213,27 @@ It also creates their named users, permission sets, memberships, and management-
 
 The administrative root discovers the existing Control Tower-enabled organization Identity Center instance. It does not create the instance or adopt Control Tower-created users, groups, permission sets, or assignments.
 
-The phase then runs `terraform/identity_center/workload_access`, which creates two manually operated test-user records plus the project-owned workload groups and reusable permission sets. The test users have no Terraform-managed memberships or direct assignments. The account-assignment map is empty initially, so no workload account assignments are created before AFT account IDs exist. Test and Production operator permission sets have no write actions by default.
+The parent Identity Center root creates the three central administrative users plus the distinct named `sso_lab_admin` identity. The phase then runs `terraform/identity_center/workload_access`, which looks up that lab user, creates two manually operated test-user records, and creates the project-owned workload groups and reusable permission sets. The test users have no Terraform-managed memberships or direct assignments. The account-assignment map is empty initially, so no workload account assignments are created before AFT account IDs exist. Test and Production operator permission sets have no write actions by default. `WorkloadLabAdministrator` is restricted to the explicit Dev Lab and Test Lab account allowlist and requires a baseline-managed `WorkloadLabRoleBoundary` in both accounts before it is used.
 
 ### Plan
 
+On the first deployment of the lab baseline persona, plan and apply the parent
+root before running the complete phase because the workload-access root looks
+up the user created by that parent state:
+
 ```bash
-./tf.sh --phase identity-center --fmt --dry-run
+terraform -chdir=terraform/identity_center plan
+terraform -chdir=terraform/identity_center apply
 ```
 
-Verify that the plan creates only project-owned resources. The workload access plan should create two distinct test users, five empty groups, five permission sets, their managed-policy attachments, and the elevated permission-set deny policies; it must not create memberships or account assignments with the default inputs. Stop if it proposes modifying a standard Control Tower group, permission set, assignment, or user.
+Then run the complete phase plan:
+
+```bash
+./tf.sh --phase identity-center --fmt
+./tf.sh --phase identity-center --dry-run
+```
+
+Verify that the plan creates only project-owned resources. The parent plan should add the distinct lab baseline user without granting it management-account access. The workload access plan should create two distinct test users, seven groups, seven permission sets, five managed-policy attachments, the lab-baseline membership, and the elevated inline policies. When both `lab_account_ids` values are configured, it also creates the two protected lab-baseline account assignments and both lab inline policies; the ordinary assignment map may remain empty. Before adding a lab assignment, verify that the approved boundary policy exists at `/week2/WorkloadLabRoleBoundary` in both allowlisted lab accounts. Stop if the plan proposes modifying a standard Control Tower group, permission set, assignment, or user.
 
 ### Apply
 
@@ -239,7 +256,8 @@ After apply:
 ### Convergence check
 
 ```bash
-./tf.sh --phase identity-center --chk --dry-run
+./tf.sh --phase identity-center --chk
+./tf.sh --phase identity-center --dry-run
 ```
 
 See [`identity_center_security.md`](identity_center_security.md) for the implemented separation, remaining escalation paths, and future mitigation recommendations.
@@ -264,7 +282,8 @@ The initial AFT deployment therefore uses one sequential apply command. Terrafor
 ### Initial AFT apply
 
 ```bash
-./tf.sh --phase aft --fmt --apply
+./tf.sh --phase aft --fmt
+./tf.sh --phase aft --apply
 ```
 
 ### Root 1 — AFT OU
@@ -339,12 +358,17 @@ It must not create:
 
 The four GitHub repositories and their `main` branches must exist before this root runs.
 
-### Post-AFT workload account assignments
+### Week 2 lab baseline and workload assignments
 
-After AFT provisions a workload account, verify that it is enrolled, resides in the intended governed environment OU, and has a healthy Control Tower baseline. Then add its explicit account ID and approved group/permission-set combination to `TF_VAR_account_assignments` for `terraform/identity_center/workload_access` and review:
+After AFT provisions the Dev Lab and Test Lab accounts, verify that both are enrolled, reside in their intended governed environment OUs, and have healthy Control Tower baselines. Configure `TF_VAR_lab_account_ids` and apply the parent and workload-access Identity Center roots first. This creates the dedicated `sso_lab_admin` user, its protected `WorkloadLabBaselineAdmin` access, and direct assignments to both lab accounts.
+
+Activate that named user with MFA and configure `lab-admin-dev` and `lab-admin-test` for the two accounts, deliberately sharing one `lab-admin` SSO session. Then run `terraform/lab/week2/baseline` with its own state key. The providers use those Identity Center profiles directly and do not call `sts:AssumeRole`. The root creates the persistent `/week2/WorkloadLabRoleBoundary` policy in both accounts and protects it with `prevent_destroy`. Review the baseline plan and verify that it creates only the two expected customer-managed boundary policies.
+
+After the boundary converges, add any approved exercise group/permission-set combinations to `TF_VAR_account_assignments` for `terraform/identity_center/workload_access`, and review:
 
 ```bash
-./tf.sh --phase identity-center --chk --dry-run
+./tf.sh --phase identity-center --chk
+./tf.sh --phase identity-center --dry-run
 ```
 
 Apply only the reviewed central account assignments. AFT customizations must not create organization-wide Identity Center groups, permission sets, or assignments. Review and remove unnecessary Account Factory bootstrap-owner access separately.
@@ -384,7 +408,8 @@ AWS references:
 After CodeConnections authorization, run:
 
 ```bash
-./tf.sh --phase aft --chk --dry-run
+./tf.sh --phase aft --chk
+./tf.sh --phase aft --dry-run
 ```
 
 Expected results:
@@ -411,7 +436,8 @@ Run these commands in order for a new environment.
 ### Bootstrap
 
 ```bash
-./tf.sh --phase bootstrap --fmt --dry-run
+./tf.sh --phase bootstrap --fmt
+./tf.sh --phase bootstrap --dry-run
 ```
 
 ```bash
@@ -419,13 +445,15 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase bootstrap --chk --dry-run
+./tf.sh --phase bootstrap --chk
+./tf.sh --phase bootstrap --dry-run
 ```
 
 ### Workload OU hierarchy
 
 ```bash
-./tf.sh --phase workloads --fmt --dry-run
+./tf.sh --phase workloads --fmt
+./tf.sh --phase workloads --dry-run
 ```
 
 ```bash
@@ -433,13 +461,15 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase workloads --chk --dry-run
+./tf.sh --phase workloads --chk
+./tf.sh --phase workloads --dry-run
 ```
 
 ### Identity Center administration
 
 ```bash
-./tf.sh --phase identity-center --fmt --dry-run
+./tf.sh --phase identity-center --fmt
+./tf.sh --phase identity-center --dry-run
 ```
 
 ```bash
@@ -447,7 +477,8 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase identity-center --chk --dry-run
+./tf.sh --phase identity-center --chk
+./tf.sh --phase identity-center --dry-run
 ```
 
 ### AFT
@@ -455,13 +486,15 @@ Run these commands in order for a new environment.
 Ensure the four repositories and their branches exist, then run:
 
 ```bash
-./tf.sh --phase aft --fmt --apply
+./tf.sh --phase aft --fmt
+./tf.sh --phase aft --apply
 ```
 
 Complete GitHub CodeConnections authorization, then run:
 
 ```bash
-./tf.sh --phase aft --chk --dry-run
+./tf.sh --phase aft --chk
+./tf.sh --phase aft --dry-run
 ```
 
 ## Existing or Partially Deployed Environments

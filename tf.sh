@@ -42,8 +42,8 @@ Required:
 Operations:
   --apply        Run 'terraform apply' in each selected Terraform root
   --dry-run      Run 'terraform plan' in each selected Terraform root
-  --fmt          Run 'terraform fmt -recursive' before plan/apply, or by itself
-  --chk          Run 'terraform fmt -check -recursive' before plan/apply, or by itself
+  --fmt          Run 'terraform fmt -recursive' as a standalone operation
+  --chk          Run 'terraform fmt -check -recursive' as a standalone operation
   -h, --help     Display this help message
 
 The identity-center phase runs these independent roots in order:
@@ -60,11 +60,11 @@ The workloads phase runs terraform/workloads/org_units after bootstrap and
 before AFT account requests target the workload environment OUs.
 
 Examples:
+  $(basename "$0") --phase bootstrap --fmt
   $(basename "$0") --phase bootstrap --dry-run
-  $(basename "$0") --phase bootstrap --fmt --dry-run
   $(basename "$0") --phase identity-center --dry-run
+  $(basename "$0") --phase aft --chk
   $(basename "$0") --phase aft --dry-run
-  $(basename "$0") --phase aft --chk --apply
   $(basename "$0") --phase workloads --dry-run
 EOF
 }

@@ -8,6 +8,11 @@ output "identity_store_id" {
   value       = local.identity_store_id
 }
 
+output "lab_admin_user_id" {
+  description = "Identity Store ID of the dedicated Week 2 lab baseline administrator."
+  value       = aws_identitystore_user.lab_admin.user_id
+}
+
 output "administrative_group_ids" {
   description = "IDs of the Terraform-managed administrative groups."
   value = {

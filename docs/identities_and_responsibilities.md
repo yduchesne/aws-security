@@ -268,7 +268,7 @@ Do not create Identity Center users for AFT pipelines, Terraform CI/CD, or other
 
 ## Project-Owned Identity Center Administrative Personas
 
-After Control Tower and its IAM Identity Center integration are healthy, `terraform/identity_center/` creates three project-owned administrative groups, three named human users, three permission sets, and their management-account assignments.
+After Control Tower and its IAM Identity Center integration are healthy, `terraform/identity_center/` creates three project-owned central administrative groups, their three named human users and permission sets, and a fourth distinct named user for lab-baseline administration. The lab user's group, permission set, membership, and lab-account assignments are owned by `terraform/identity_center/workload_access`.
 
 These resources are distinct from the standard Control Tower-created groups and permission sets. Terraform discovers the existing organization Identity Center instance but does not manage the instance or adopt Control Tower-owned identity resources.
 
@@ -381,9 +381,36 @@ Its permission set explicitly denies permission-set creation and policy mutation
 
 This persona may still be able to assign an existing powerful permission set to itself or to a group it belongs to. Assignments involving privileged permission sets or the Organizations management account require independent approval and monitoring.
 
+### Lab baseline administrator
+
+User variables:
+
+```text
+TF_VAR_sso_lab_admin_email
+TF_VAR_sso_lab_admin_first_name
+TF_VAR_sso_lab_admin_last_name
+```
+
+The parent root creates this distinct named human without assigning central
+administrative permissions. The workload-access root looks up the existing
+user and manages:
+
+```text
+WorkloadLabBaselineAdministrators
+  + WorkloadLabBaselineAdmin
+  + Dev Lab and Test Lab accounts only
+```
+
+The protected one-hour permission set can create, inspect, tag, and update
+versions only for `/week2/WorkloadLabRoleBoundary`. It cannot create IAM roles,
+users, access keys, identity providers, or administer Organizations, Identity
+Center, or Control Tower. The user authenticates directly into each lab account
+through IAM Identity Center; the baseline providers do not call
+`sts:AssumeRole`.
+
 ### Assignment model
 
-Each project-owned group receives its corresponding permission set only in the Organizations management account:
+Each project-owned central group receives its corresponding permission set only in the Organizations management account:
 
 ```text
 AWSIdentityStoreAdmins
@@ -399,7 +426,7 @@ AWSAccessAssignmentAdmins
   + Management account
 ```
 
-The three users must use distinct email addresses. Each user is added only to its corresponding group by Terraform.
+The three central users must use distinct email addresses. The lab baseline user must differ from all three central users and both exercise test users. Each central user is added only to its corresponding central group; the lab user's membership is owned by the workload-access root.
 
 ### Separation-of-duties interpretation
 
@@ -453,6 +480,12 @@ See [`identity_center_security.md`](identity_center_security.md) for the detaile
 | `WorkloadDevelopers` | `WorkloadDeveloper` | Approved Dev accounts only |
 | `WorkloadTestOperators` | `WorkloadTestOperator` | Approved Test accounts only |
 | `WorkloadProductionOperators` | `WorkloadProductionOperator` | Approved Prod accounts only |
+| `WorkloadLabAdministrators` | `WorkloadLabAdministrator` | Explicitly allowlisted Dev Lab and Test Lab accounts only |
+
+`WorkloadLabAdministrator` permits bounded Week 2 IAM, S3, and STS lab work.
+Every role it creates must use the pre-provisioned `WorkloadLabRoleBoundary`;
+the persona cannot create, alter, replace, or remove that ceiling. Trusted
+baseline automation owns the boundary policy in each lab account.
 
 The test users intentionally have no Terraform-managed memberships or direct assignments. They are manually activated and operated for console testing; temporary access must be documented, must exclude the management and AFT accounts, and must be removed immediately after testing.
 

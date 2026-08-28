@@ -77,6 +77,37 @@ variable "sso_access_assignment_admin_last_name" {
   type        = string
 }
 
+variable "sso_lab_admin_email" {
+  description = "Email of the dedicated named human who administers the Week 2 lab permissions boundary."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.sso_lab_admin_email))
+    error_message = "sso_lab_admin_email must be a valid email address."
+  }
+}
+
+variable "sso_lab_admin_first_name" {
+  description = "First name of the dedicated Week 2 lab baseline administrator."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.sso_lab_admin_first_name)) > 0
+    error_message = "sso_lab_admin_first_name must not be empty."
+  }
+}
+
+variable "sso_lab_admin_last_name" {
+  description = "Last name of the dedicated Week 2 lab baseline administrator."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.sso_lab_admin_last_name)) > 0
+    error_message = "sso_lab_admin_last_name must not be empty."
+  }
+}
+
 variable "privileged_session_duration" {
   description = "Session duration for privileged Identity Center permission sets."
   type        = string

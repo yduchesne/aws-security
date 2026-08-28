@@ -24,7 +24,8 @@ Use the repository wrapper to initialize, validate, and plan this root with the
 shared backend configuration:
 
 ```bash
-./tf.sh --phase workloads --chk --dry-run
+./tf.sh --phase workloads --chk
+./tf.sh --phase workloads --dry-run
 ```
 
 When operating directly from this directory, initialize the S3 backend before
