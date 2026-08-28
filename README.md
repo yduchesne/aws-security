@@ -8,12 +8,12 @@ This project holds the sources necessary for creating a full-on, secure, AWS org
 
 Additional documentation is available in:
 
-- [AGENTS.md](./AGENTS.md)
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- [Control Tower Design](docs/control-tower-design.md)
-- [Identities and Responsibilities](docs/identities_and_responsibilities.md)
-- [Identity Center Security](docs/identity_center_security.md)
+- [AGENTS.md](./AGENTS.md).
+- [Architecture](docs/architecture.md).
+- [Deployment](docs/deployment.md).
+- [Control Tower Design](docs/control-tower-design.md).
+- [Identities and Responsibilities](docs/identities_and_responsibilities.md).
+- [Identity Center Security](docs/identity_center_security.md).
 
 # Installing Environment
 

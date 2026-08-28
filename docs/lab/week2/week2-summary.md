@@ -6,15 +6,73 @@ federation, least privilege, policy evaluation, and troubleshooting\
 **Environment:** Multi-account AWS Organization / Control Tower landing
 zone established in Week 1
 
+## Table of contents
+
+- [Curriculum classification](#curriculum-classification)
+- [Exercise guides](#exercise-guides)
+  - [[Core] Exercise 1 — Basic cross-account `AssumeRole`](#core-exercise-1--basic-cross-account-assumerole)
+  - [[Core] Exercise 2 — Trust-policy hardening](#core-exercise-2--trust-policy-hardening)
+  - [[Core] Exercise 3 — Third-party role and `ExternalId`](#core-exercise-3--third-party-role-and-externalid)
+  - [[Optional] Exercise 4 — Boundary limits an administrator-looking role](#optional-exercise-4--boundary-limits-an-administrator-looking-role)
+  - [[Core] Exercise 5 — Delegated IAM administration with mandatory boundaries](#core-exercise-5--delegated-iam-administration-with-mandatory-boundaries)
+  - [[Core] Exercise 6 — Project-based ABAC](#core-exercise-6--project-based-abac)
+  - [[Optional] Exercise 7 — Environment-sensitive ABAC](#optional-exercise-7--environment-sensitive-abac)
+  - [[Core] Exercise 8 — EC2 workload role versus static credentials](#core-exercise-8--ec2-workload-role-versus-static-credentials)
+  - [[Core] Exercise 9 — CI/CD workload federation with OIDC](#core-exercise-9--ci-cd-workload-federation-with-oidc)
+  - [[Optional] Exercise 10 — Detect unintended external access](#optional-exercise-10--detect-unintended-external-access)
+  - [[Core] Exercise 11 — Validate IAM policies before deployment](#core-exercise-11--validate-iam-policies-before-deployment)
+  - [[Optional] Exercise 12 — Unused access and least-privilege refinement](#optional-exercise-12--unused-access-and-least-privilege-refinement)
+  - [[Optional] Exercise 13 — IAM says Allow; SCP says Deny](#optional-exercise-13--iam-says-allow-scp-says-deny)
+  - [[Optional] Exercise 14 — Administrator policy constrained by permissions boundary](#optional-exercise-14--administrator-policy-constrained-by-permissions-boundary)
+  - [[Core] Exercise 15 — Diagnose `AssumeRole` failures systematically](#core-exercise-15--diagnose-assumerole-failures-systematically)
+- [Recommended evidence format](#recommended-evidence-format)
+- [Suggested 5-Day Execution Plan](#suggested-5-day-execution-plan)
+- [Week 2 Completion Criteria](#week-2-completion-criteria)
+
 Setup and execution guides:
 
-- [Week 2 shared setup](week2-setup.md)
-- [Exercise 1 setup and execution](exercise1.md)
+- [Week 2 shared setup](week2-setup.md).
+- [Exercise 1 setup and execution](exercise1/exercise1-instructions.md).
+- [Exercise 2 setup and execution](exercise2/exercise2-instructions.md).
+- [Exercises 3–15 setup and execution](exercise3/exercise3-instructions.md) (each exercise has its own directory and guide).
 
 The goal for Week 2 is not merely to create IAM policies. Each exercise
 should force you to **predict an authorization decision, test it,
 capture evidence, and explain exactly which policy layer produced the
 result**.
+
+## Curriculum classification
+
+The following classification keeps the mandatory path focused while retaining
+useful extensions:
+
+| Exercises | Classification | Rationale |
+|---|---|---|
+| 1, 2, 3, 5, 6, 8, 9, 11, 15 | Core | Required concepts for the primary AWS Security Specialty learning path. |
+| 4, 7, 10, 12, 13, 14 | Optional | Extensions, overlapping demonstrations, or slower operational scenarios. |
+
+Exercises 4 and 14 are complementary permissions-boundary demonstrations;
+Exercise 7 extends Exercise 6; and Exercise 15 serves as the cross-account
+troubleshooting capstone. Each exercise guide and Terraform root carries the
+same `Core` or `Optional` classification.
+
+## Exercise guides
+
+- [[Core] Exercise 1 — Basic cross-account `AssumeRole`](exercise1/exercise1-instructions.md).
+- [[Core] Exercise 2 — Trust-policy hardening](exercise2/exercise2-instructions.md).
+- [[Core] Exercise 3 — Third-party role and `ExternalId`](exercise3/exercise3-instructions.md).
+- [[Optional] Exercise 4 — Boundary limits an administrator-looking role](exercise4/exercise4-instructions.md).
+- [[Core] Exercise 5 — Delegated IAM administration with mandatory boundaries](exercise5/exercise5-instructions.md).
+- [[Core] Exercise 6 — Project-based ABAC](exercise6/exercise6-instructions.md).
+- [[Optional] Exercise 7 — Environment-sensitive ABAC](exercise7/exercise7-instructions.md).
+- [[Core] Exercise 8 — EC2 workload role versus static credentials](exercise8/exercise8-instructions.md).
+- [[Core] Exercise 9 — CI/CD workload federation with OIDC](exercise9/exercise9-instructions.md).
+- [[Optional] Exercise 10 — Detect unintended external access](exercise10/exercise10-instructions.md).
+- [[Core] Exercise 11 — Validate IAM policies before deployment](exercise11/exercise11-instructions.md).
+- [[Optional] Exercise 12 — Unused access and least-privilege refinement](exercise12/exercise12-instructions.md).
+- [[Optional] Exercise 13 — IAM says Allow; SCP says Deny](exercise13/exercise13-instructions.md).
+- [[Optional] Exercise 14 — Administrator policy constrained by permissions boundary](exercise14/exercise14-instructions.md).
+- [[Core] Exercise 15 — Diagnose `AssumeRole` failures systematically](exercise15/exercise15-instructions.md).
 
 Use disposable workload accounts/resources where possible. Avoid
 experimental deny policies in the management, Log Archive, or Security
@@ -59,15 +117,15 @@ matter.
 AWS references:
 
 -   Cross-account resource access:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html.
 -   Cross-account policy evaluation:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic-cross-account.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic-cross-account.html.
 -   AWS cross-account IAM tutorial:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/tutorial_cross-account-with-roles.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/tutorial_cross-account-with-roles.html.
 -   AWS CLI role configuration:
-    https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html
+    https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html.
 
-## Exercise 1 --- Basic cross-account `AssumeRole`
+## [Core] Exercise 1 --- Basic cross-account `AssumeRole`
 
 ### Objective
 
@@ -100,14 +158,14 @@ STS AssumeRole ─────────────────────�
 Create in the **target account**:
 
 -   `CrossAccountReadRole`
--   trust policy permitting only a specific source role;
--   permissions allowing a narrow set of read operations, such as
+-   Trust policy permitting only a specific source role;.
+-   Permissions allowing a narrow set of read operations, such as
     listing/describing a test S3 bucket or selected resources.
 
 Create in the **source account**:
 
 -   `CrossAccountCallerRole`;
--   identity policy allowing `sts:AssumeRole` only against the target
+-   Identity policy allowing `sts:AssumeRole` only against the target
     role ARN.
 
 Do **not** trust the entire source account unless the exercise
@@ -125,20 +183,20 @@ aws sts assume-role \
 
 Export/use the returned temporary credentials and verify:
 
--   allowed read operation succeeds;
--   write operation fails;
--   unrelated resource access fails;
--   assumption by an untrusted principal fails.
+-   Allowed read operation succeeds;.
+-   Write operation fails;.
+-   Unrelated resource access fails;.
+-   Assumption by an untrusted principal fails.
 
 ### Investigation
 
 Inspect the `AssumeRole` CloudTrail event and identify:
 
--   calling principal;
--   target role;
--   session name;
--   source IP;
--   resulting assumed-role ARN.
+-   Calling principal;.
+-   Target role;.
+-   Session name;.
+-   Source IP;.
+-   Resulting assumed-role ARN.
 
 ### Learning outcome
 
@@ -148,7 +206,7 @@ authorization is evaluated in both accounts.
 
 ------------------------------------------------------------------------
 
-## Exercise 2 --- Trust-policy hardening
+## [Core] Exercise 2 --- Trust-policy hardening
 
 ### Objective
 
@@ -197,7 +255,7 @@ and:
 
 ------------------------------------------------------------------------
 
-## Exercise 3 --- Third-party role and `ExternalId`
+## [Core] Exercise 3 --- Third-party role and `ExternalId`
 
 ### Objective
 
@@ -257,7 +315,7 @@ Effective identity permissions
 
 Explicit denies from applicable policies still win.
 
-## Exercise 4 --- Boundary limits an administrator-looking role
+## [Optional] Exercise 4 --- Boundary limits an administrator-looking role
 
 ### Objective
 
@@ -315,7 +373,7 @@ Effective permission  = intersection
 
 ------------------------------------------------------------------------
 
-## Exercise 5 --- Delegated IAM administration with mandatory boundaries
+## [Core] Exercise 5 --- Delegated IAM administration with mandatory boundaries
 
 ### Objective
 
@@ -381,14 +439,14 @@ than simply least-privilege policy authoring.
 AWS references:
 
 -   ABAC introduction:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction_attribute-based-access-control.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction_attribute-based-access-control.html.
 -   IAM tags and authorization:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/access_iam-tags.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/access_iam-tags.html.
 
 ABAC uses attributes such as principal and resource tags rather than
 enumerating every resource ARN.
 
-## Exercise 6 --- Project-based ABAC
+## [Core] Exercise 6 --- Project-based ABAC
 
 ### Objective
 
@@ -448,9 +506,9 @@ aws:ResourceTag/Project
 
 Determine whether the principal can:
 
--   change its own authorization-relevant tags;
--   change resource tags;
--   create resources with arbitrary `Project` tags.
+-   Change its own authorization-relevant tags;.
+-   Change resource tags;.
+-   Create resources with arbitrary `Project` tags.
 
 This is critical: an ABAC system can be undermined if a principal can
 freely manipulate the attributes used for authorization.
@@ -462,7 +520,7 @@ not merely resource organization.
 
 ------------------------------------------------------------------------
 
-## Exercise 7 --- Environment-sensitive ABAC
+## [Optional] Exercise 7 --- Environment-sensitive ABAC
 
 ### Objective
 
@@ -516,7 +574,7 @@ The core rule is:
 > Workloads should normally obtain temporary credentials through
 > roles/federation rather than store long-lived IAM-user access keys.
 
-## Exercise 8 --- EC2 workload role versus static credentials
+## [Core] Exercise 8 --- EC2 workload role versus static credentials
 
 ### Objective
 
@@ -537,11 +595,11 @@ Verify that no static AWS access key was placed on the host.
 
 ### Tests
 
--   allowed resource succeeds;
--   unrelated resource fails;
--   replace/detach the role and observe behavior;
--   inspect CloudTrail to identify the role session;
--   inspect how credentials are automatically rotated.
+-   Allowed resource succeeds;.
+-   Unrelated resource fails;.
+-   Replace/detach the role and observe behavior;.
+-   Inspect CloudTrail to identify the role session;.
+-   Inspect how credentials are automatically rotated.
 
 ### Security analysis
 
@@ -557,7 +615,7 @@ Document exposure, rotation, revocation, and blast-radius differences.
 
 ------------------------------------------------------------------------
 
-## Exercise 9 --- CI/CD workload federation with OIDC
+## [Core] Exercise 9 --- CI/CD workload federation with OIDC
 
 ### Objective
 
@@ -584,19 +642,19 @@ temporary AWS credentials
 
 Create:
 
--   CircleCI OIDC provider;
--   narrowly scoped Terraform plan/deployment role;
--   trust-policy conditions restricting which CircleCI project/context
-    may assume it;
--   no stored AWS access key.
+-   CircleCI OIDC provider;.
+-   Narrowly scoped Terraform plan/deployment role;.
+-   Trust-policy conditions restricting which CircleCI project/context
+    may assume it;.
+-   No stored AWS access key.
 
 ### Tests
 
 Verify:
 
--   authorized project succeeds;
--   another project/claim combination fails;
--   role has only required AWS permissions;
+-   Authorized project succeeds;.
+-   Another project/claim combination fails;.
+-   Role has only required AWS permissions;.
 -   CloudTrail records `AssumeRoleWithWebIdentity`.
 
 ### Extension
@@ -627,9 +685,9 @@ AWS references:
 -   Findings:
     https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-concepts.html
 -   Policy validation:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-policy-validation.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-policy-validation.html.
 -   Finding remediation:
-    https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-findings-remediate.html
+    https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-findings-remediate.html.
 
 IAM Access Analyzer can identify external/internal access, unused
 access, validate policies, perform custom checks, and generate policies
@@ -638,7 +696,7 @@ from CloudTrail activity.
 External/internal analyzers are Regional; unused-access analysis does
 not need to be duplicated per Region.
 
-## Exercise 10 --- Detect unintended external access
+## [Optional] Exercise 10 --- Detect unintended external access
 
 ### Objective
 
@@ -660,11 +718,11 @@ Wait for/find the Access Analyzer finding.
 
 Record:
 
--   resource;
--   external principal;
--   granted actions;
--   finding status;
--   analyzer's zone of trust.
+-   Resource;.
+-   External principal;.
+-   Granted actions;.
+-   Finding status;.
+-   Analyzer's zone of trust.
 
 Then remove the external access and verify the finding resolves.
 
@@ -676,7 +734,7 @@ reachability for supported resource policies.
 
 ------------------------------------------------------------------------
 
-## Exercise 11 --- Validate IAM policies before deployment
+## [Core] Exercise 11 --- Validate IAM policies before deployment
 
 ### Objective
 
@@ -685,10 +743,10 @@ workflow.
 
 Create several intentionally problematic policies:
 
--   overly broad actions/resources;
--   malformed or invalid elements;
--   questionable condition usage;
--   a clean least-privilege policy.
+-   Overly broad actions/resources;.
+-   Malformed or invalid elements;.
+-   Questionable condition usage;.
+-   A clean least-privilege policy.
 
 Run:
 
@@ -718,7 +776,7 @@ policy-as-code quality gate**.
 
 ------------------------------------------------------------------------
 
-## Exercise 12 --- Unused access and least-privilege refinement
+## [Optional] Exercise 12 --- Unused access and least-privilege refinement
 
 ### Objective
 
@@ -792,7 +850,7 @@ Effective authorization decision
 
 # `scenarios/scp-deny/`
 
-## Exercise 13 --- IAM says Allow; SCP says Deny
+## [Optional] Exercise 13 --- IAM says Allow; SCP says Deny
 
 ### Objective
 
@@ -812,11 +870,11 @@ In a disposable workload OU/account:
 
 Before changing anything, inspect:
 
--   identity policy;
--   permissions boundary;
--   role session;
--   resource policy;
--   SCPs inherited from root and parent OUs;
+-   Identity policy;.
+-   Permissions boundary;.
+-   Role session;.
+-   Resource policy;.
+-   SCPs inherited from root and parent OUs;.
 -   CloudTrail event.
 
 ### Required explanation
@@ -841,7 +899,7 @@ effective permissions.
 
 # `scenarios/boundary-deny/`
 
-## Exercise 14 --- Administrator policy constrained by permissions boundary
+## [Optional] Exercise 14 --- Administrator policy constrained by permissions boundary
 
 ### Objective
 
@@ -886,10 +944,10 @@ Then add the required permission to the boundary and retest.
 
 Be able to distinguish:
 
--   explicit deny;
--   implicit deny;
--   permissions ceiling;
--   permissions grant.
+-   Explicit deny;.
+-   Implicit deny;.
+-   Permissions ceiling;.
+-   Permissions grant.
 
 Do not describe a permissions boundary as a policy that simply "denies
 everything not listed"; explain it as the maximum identity permissions
@@ -899,7 +957,7 @@ the principal may receive.
 
 # `scenarios/assume-role-failure/`
 
-## Exercise 15 --- Diagnose `AssumeRole` failures systematically
+## [Core] Exercise 15 --- Diagnose `AssumeRole` failures systematically
 
 ### Objective
 
@@ -975,12 +1033,12 @@ Complete:
 
 For every failure:
 
--   locate relevant STS/CloudTrail evidence;
--   record the principal ARN;
--   record role ARN;
--   record session name;
--   identify which policy layer you conclude blocked access;
--   explain what evidence supports that conclusion.
+-   Locate relevant STS/CloudTrail evidence;.
+-   Record the principal ARN;.
+-   Record role ARN;.
+-   Record session name;.
+-   Identify which policy layer you conclude blocked access;.
+-   Explain what evidence supports that conclusion.
 
 ### Advanced extension --- Source identity
 
@@ -1064,56 +1122,6 @@ troubleshooting guide** based on what you observed experimentally.
 
 ------------------------------------------------------------------------
 
-# Repository Layout After Week 2
-
-``` text
-week-2-iam/
-├── cross-account/
-│   ├── README.md
-│   ├── terraform/
-│   ├── test.sh
-│   └── evidence/
-│
-├── permission-boundaries/
-│   ├── README.md
-│   ├── terraform/
-│   ├── test.sh
-│   └── evidence/
-│
-├── abac/
-│   ├── README.md
-│   ├── terraform/
-│   ├── test.sh
-│   └── evidence/
-│
-├── workload-identities/
-│   ├── README.md
-│   ├── terraform/
-│   ├── test.sh
-│   └── evidence/
-│
-├── access-analyzer/
-│   ├── README.md
-│   ├── terraform/
-│   ├── validate-policies.sh
-│   └── evidence/
-│
-└── scenarios/
-    ├── scp-deny/
-    │   ├── README.md
-    │   ├── terraform/
-    │   └── evidence/
-    ├── boundary-deny/
-    │   ├── README.md
-    │   ├── terraform/
-    │   └── evidence/
-    └── assume-role-failure/
-        ├── README.md
-        ├── terraform/
-        ├── test.sh
-        └── evidence/
-```
-
 # Week 2 Completion Criteria
 
 At the end of the week, you should be able to take an AWS authorization
@@ -1122,21 +1130,21 @@ permissions until it works.
 
 You should be able to explain and demonstrate:
 
--   cross-account trust versus permissions;
--   STS temporary credentials;
--   role trust policies;
+-   Cross-account trust versus permissions;.
+-   STS temporary credentials;.
+-   Role trust policies;.
 -   `ExternalId` and the confused-deputy problem;
--   permissions boundaries as privilege ceilings;
--   delegated IAM administration without unrestricted privilege
-    escalation;
--   RBAC versus ABAC;
--   authorization-sensitive tag governance;
--   workforce identity versus workload identity;
--   native AWS roles versus OIDC federation;
--   IAM Access Analyzer external-access reasoning;
--   IAM policy validation;
--   SCP, boundary, identity-policy, and trust-policy interactions;
--   systematic `AssumeRole` troubleshooting.
+-   Permissions boundaries as privilege ceilings;.
+-   Delegated IAM administration without unrestricted privilege
+    escalation;.
+-   RBAC versus ABAC;.
+-   Authorization-sensitive tag governance;.
+-   Workforce identity versus workload identity;.
+-   Native AWS roles versus OIDC federation;.
+-   IAM Access Analyzer external-access reasoning;.
+-   IAM policy validation;.
+-   SCP, boundary, identity-policy, and trust-policy interactions;.
+-   Systematic `AssumeRole` troubleshooting.
 
 The strongest portfolio outcome is not "I created IAM roles." It is:
 

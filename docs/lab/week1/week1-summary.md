@@ -94,17 +94,17 @@ Understand which resources exist, which service created them, and which Terrafor
 
 Inventory the following without modifying them:
 
-- AWS Organization and Organizations root;
-- OUs and account placement;
-- Control Tower landing zone version, status, and drift status;
-- enabled Control Tower baselines and their targets;
-- Control Tower controls currently enabled on each OU;
-- IAM Identity Center instance, permission sets, and account assignments;
-- Control Tower shared accounts;
-- AFT OU and AFT account enrollment;
-- Control Tower and AFT IAM roles;
-- CloudFormation StackSets and stack instances;
-- CloudTrail, AWS Config, and centralized logging resources;
+- AWS Organization and Organizations root;.
+- OUs and account placement;.
+- Control Tower landing zone version, status, and drift status;.
+- Enabled Control Tower baselines and their targets;.
+- Control Tower controls currently enabled on each OU;.
+- IAM Identity Center instance, permission sets, and account assignments;.
+- Control Tower shared accounts;.
+- AFT OU and AFT account enrollment;.
+- Control Tower and AFT IAM roles;.
+- CloudFormation StackSets and stack instances;.
+- CloudTrail, AWS Config, and centralized logging resources;.
 - AFT pipelines, Step Functions workflows, Lambda functions, DynamoDB tables, and CodeConnections connection.
 
 Create an ownership table:
@@ -121,18 +121,18 @@ Create an ownership table:
 
 Capture redacted CLI inventory, a current account/OU diagram, and a resource-ownership matrix. Explicitly distinguish:
 
-- Organizations membership;
-- OU baseline enablement;
-- Control Tower account enrollment;
-- Control Tower controls;
+- Organizations membership;.
+- OU baseline enablement;.
+- Control Tower account enrollment;.
+- Control Tower controls;.
 - AFT account management.
 
 AWS references:
 
-- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html)
-- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html)
-- [AWS Organizations concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html)
-- [AFT architecture](https://docs.aws.amazon.com/controltower/latest/userguide/aft-architecture.html)
+- [What is AWS Control Tower?](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html).
+- [AWS Control Tower baselines](https://docs.aws.amazon.com/controltower/latest/userguide/baselines.html).
+- [AWS Organizations concepts](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_getting-started_concepts.html).
+- [AFT architecture](https://docs.aws.amazon.com/controltower/latest/userguide/aft-architecture.html).
 
 # Exercise 2 — Validate Identity Center and Plan the Bootstrap Handoff
 
@@ -174,9 +174,9 @@ Use [`../../identities_and_responsibilities.md`](../../identities_and_responsibi
 
 AWS references:
 
-- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html)
-- [Assign access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html)
-- [IAM security best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
+- [IAM Identity Center permission sets](https://docs.aws.amazon.com/singlesignon/latest/userguide/permissionsetsconcept.html).
+- [Assign access to AWS accounts](https://docs.aws.amazon.com/singlesignon/latest/userguide/useraccess.html).
+- [IAM security best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html).
 
 # Exercise 3 — Validate Terraform Ownership and Idempotence
 
@@ -214,8 +214,8 @@ No root proposes replacement or deletion of the Organization, landing zone, shar
 
 AWS references:
 
-- [Terraform state security guidance for AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/secure-sensitive-data-secrets-manager-terraform/using-secrets-manager-and-terraform.html)
-- [AFT deployment](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html)
+- [Terraform state security guidance for AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/secure-sensitive-data-secrets-manager-terraform/using-secrets-manager-and-terraform.html).
+- [AFT deployment](https://docs.aws.amazon.com/controltower/latest/userguide/aft-getting-started.html).
 
 # Exercise 4 — Validate AFT Operational Readiness
 
@@ -250,9 +250,9 @@ GitHub account request
 
 AWS references:
 
-- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html)
-- [AFT troubleshooting](https://docs.aws.amazon.com/controltower/latest/userguide/aft-troubleshooting.html)
-- [AWS CodeConnections](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html)
+- [AFT account provisioning](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html).
+- [AFT troubleshooting](https://docs.aws.amazon.com/controltower/latest/userguide/aft-troubleshooting.html).
+- [AWS CodeConnections](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html).
 
 # Exercise 5 — Prove the Difference Between Baseline, Enrollment, and Automatic Enrollment
 
@@ -285,9 +285,9 @@ Do not create an unmanaged account merely to test automatic enrollment.
 
 AWS references:
 
-- [Register an existing OU](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html)
-- [Enroll an existing account](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html)
-- [Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html)
+- [Register an existing OU](https://docs.aws.amazon.com/controltower/latest/userguide/register-existing-ou.html).
+- [Enroll an existing account](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html).
+- [Control Tower Account Factory](https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html).
 
 # Exercise 6 — SCP and Landing-Zone Drift Incident Retrospective
 
@@ -312,22 +312,22 @@ Organization resource omitted enabled_policy_types
 
 Document:
 
-- why omission in a Terraform-managed collection can imply removal;
-- why the management account is exceptionally sensitive;
-- which CloudTrail events record the policy-type change;
-- whether any controls were temporarily ineffective;
-- how live AWS status differed from stale Terraform state;
-- the code change that preserves `SERVICE_CONTROL_POLICY`;
-- the runbook that prevents recurrence;
-- residual risks associated with `ct-bootstrap` and management-account access.
+- Why omission in a Terraform-managed collection can imply removal;.
+- Why the management account is exceptionally sensitive;.
+- Which CloudTrail events record the policy-type change;.
+- Whether any controls were temporarily ineffective;.
+- How live AWS status differed from stale Terraform state;.
+- The code change that preserves `SERVICE_CONTROL_POLICY`;.
+- The runbook that prevents recurrence;.
+- Residual risks associated with `ct-bootstrap` and management-account access.
 
 Do **not** disable SCPs again. The real incident already supplies the failure evidence.
 
 AWS references:
 
-- [Enable and disable policy types](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_enable-disable.html)
-- [Service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html)
-- [Detect and resolve Control Tower drift](https://docs.aws.amazon.com/controltower/latest/userguide/drift.html)
+- [Enable and disable policy types](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_enable-disable.html).
+- [Service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html).
+- [Detect and resolve Control Tower drift](https://docs.aws.amazon.com/controltower/latest/userguide/drift.html).
 
 # Exercise 7 — Evaluate Log Archive and Audit Boundaries Safely
 
@@ -356,9 +356,9 @@ A compromised member-account administrator cannot alter authoritative centralize
 
 AWS references:
 
-- [Log Archive account](https://docs.aws.amazon.com/controltower/latest/userguide/accounts.html)
-- [CloudTrail security best practices](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/best-practices-security.html)
-- [IAM Access Analyzer policy validation](https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-policy-validation.html)
+- [Log Archive account](https://docs.aws.amazon.com/controltower/latest/userguide/accounts.html).
+- [CloudTrail security best practices](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/best-practices-security.html).
+- [IAM Access Analyzer policy validation](https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-policy-validation.html).
 
 # Exercise 8 — Perform a Week 1 Security-Service Gap Analysis
 
@@ -393,9 +393,9 @@ This exercise prevents the landing-zone deployment from being mistaken for a com
 
 AWS references:
 
-- [AWS Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/)
-- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html)
-- [AWS Well-Architected Security Pillar](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html)
+- [AWS Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/).
+- [Delegated administrator for AWS services](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_delegate_admin.html).
+- [AWS Well-Architected Security Pillar](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html).
 
 # Exercise 9 — Provision a Disposable Sandbox Through AFT (Conditional)
 
@@ -407,14 +407,14 @@ Validate the complete account-vending path and create a safe target for future s
 
 Proceed only if:
 
-- the AFT deployment is healthy;
-- CodeConnections is `AVAILABLE`;
-- all four repositories and `main` branches exist;
-- a dedicated test/sandbox OU is approved and governed;
-- a unique account email is available;
-- expected account and security-service costs are accepted;
-- account closure and teardown responsibilities are documented;
-- no production or shared account is used.
+- The AFT deployment is healthy;.
+- CodeConnections is `AVAILABLE`;.
+- All four repositories and `main` branches exist;.
+- A dedicated test/sandbox OU is approved and governed;.
+- A unique account email is available;.
+- Expected account and security-service costs are accepted;.
+- Account closure and teardown responsibilities are documented;.
+- No production or shared account is used.
 
 If these prerequisites cannot be completed before Sunday, prepare and review the account request but defer merging it. That is an acceptable Week 1 outcome.
 
@@ -433,8 +433,8 @@ Do not deploy application infrastructure during this exercise.
 
 AWS references:
 
-- [Provision an account with AFT](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html)
-- [AFT account request](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-request.html)
+- [Provision an account with AFT](https://docs.aws.amazon.com/controltower/latest/userguide/aft-provision-account.html).
+- [AFT account request](https://docs.aws.amazon.com/controltower/latest/userguide/aft-account-request.html).
 
 # Deferred Exercises
 

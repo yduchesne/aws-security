@@ -53,7 +53,7 @@ Key areas:
   - Deploys Account Factory for Terraform after the AFT account is enrolled.
   - Does not provision application infrastructure.
 
-- AFT account-request configuration/repository
+- AFT account-request configuration/repository.
   - Used after AFT is operational to provision ordinary organization accounts.
   - Examples include Automation, Network, Shared Services, development, production, and other workload accounts.
 
@@ -69,10 +69,10 @@ Key areas:
 
 The bootstrap layer should create only the resources required to establish:
 
-- AWS Organizations
-- the AWS Control Tower landing zone
-- foundational non-AFT OUs
-- Control Tower shared accounts and prerequisites
+- AWS Organizations.
+- The AWS Control Tower landing zone.
+- Foundational non-AFT OUs.
+- Control Tower shared accounts and prerequisites.
 
 The AFT OU, its baseline, and the AFT management account belong to the ordered roots under `terraform/aft/`.
 
@@ -94,12 +94,12 @@ Where required, explicitly enable the appropriate Control Tower OU baseline befo
 
 Do not conflate:
 
-- OU creation
-- OU registration with Control Tower
-- baseline enablement
-- account enrollment
-- Control Tower controls
-- AFT account provisioning
+- OU creation.
+- OU registration with Control Tower.
+- Baseline enablement.
+- Account enrollment.
+- Control Tower controls.
+- AFT account provisioning.
 
 ### Automation and IAM
 
@@ -115,8 +115,8 @@ Avoid long-lived IAM user access keys.
 
 Do not define an existing AWS resource as a Terraform-managed resource unless:
 
-- Terraform already owns it in state, or
-- the resource is explicitly imported before apply.
+- Terraform already owns it in state, or.
+- The resource is explicitly imported before apply.
 
 Never assume Terraform will automatically adopt an existing Control Tower, Organizations, IAM, or other AWS resource.
 
@@ -139,14 +139,14 @@ Do not manually recreate Control Tower-managed resources unless the design docum
 
 Treat the following as separate concepts:
 
-- AWS Organizations hierarchy
-- Control Tower landing zone
-- Control Tower baselines
-- Control Tower controls
-- account enrollment
-- Account Factory
-- Account Factory for Terraform
-- AFT account customizations
+- AWS Organizations hierarchy.
+- Control Tower landing zone.
+- Control Tower baselines.
+- Control Tower controls.
+- Account enrollment.
+- Account Factory.
+- Account Factory for Terraform.
+- AFT account customizations.
 
 If an AFT account request targets an OU, verify that the OU is governed appropriately and has `AWSControlTowerBaseline` enabled as required.
 
@@ -154,25 +154,29 @@ If an AFT account request targets an OU, verify that the OU is governed appropri
 
 Prefer:
 
-- native resources from the HashiCorp AWS provider where available
-- explicit dependencies when AWS service sequencing is asynchronous or not inferable from references
-- small Terraform files grouped by architectural responsibility
-- reusable modules for repeated constructs
-- descriptive resource names
-- variables for environment-specific values
-- outputs for identifiers required by later Terraform roots
-- least-privilege IAM roles
+- Native resources from the HashiCorp AWS provider where available.
+- Explicit dependencies when AWS service sequencing is asynchronous or not inferable from references.
+- Small Terraform files grouped by architectural responsibility.
+- Reusable modules for repeated constructs.
+- Descriptive resource names.
+- Variables for environment-specific values.
+- Outputs for identifiers required by later Terraform roots.
+- Least-privilege IAM roles.
 
 Avoid:
 
 - `local-exec` or shell provisioning when an appropriate Terraform/AWS provider resource exists
-- hard-coded AWS account IDs
-- hard-coded credentials
-- unnecessary `AdministratorAccess`
-- hidden or undocumented cross-account trust
-- direct `aws_organizations_account` creation for ordinary post-AFT accounts
+- Hard-coded AWS account IDs.
+- Hard-coded credentials.
+- Unnecessary `AdministratorAccess`.
+- Hidden or undocumented cross-account trust.
+- Direct `aws_organizations_account` creation for ordinary post-AFT accounts.
 
 Before introducing a workaround with the AWS CLI, external scripts, or CloudFormation, verify whether the current AWS provider or AFT already supports the requirement.
+
+## Documentation Guidelines
+
+Refer to the [Documentation Guidelines](docs/doc-guidelines.md) document.
 
 ## Change Procedure
 
