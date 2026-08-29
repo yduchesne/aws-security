@@ -1,13 +1,27 @@
 # Curriculum: Core
+locals {
+  boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+}
+
+data "aws_iam_policy" "lab_role_boundary" {
+  arn = local.boundary_arn
+}
+
 resource "aws_iam_role" "exercise" {
-  name = "Week2Exercise3Role"
-  path = "/week2/exercise3/"
+  name                 = "Week2Exercise3Role"
+  path                 = "/week2/exercise3/"
+  permissions_boundary = data.aws_iam_policy.lab_role_boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { AWS = data.aws_caller_identity.current.arn }
+      Principal = { AWS = var.source_operator_role_arn }
       Action    = "sts:AssumeRole"
+      Condition = {
+        StringEquals = {
+          "sts:ExternalId" = var.external_id
+        }
+      }
     }]
   })
 }

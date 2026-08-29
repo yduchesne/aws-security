@@ -17,6 +17,10 @@ evidence, and remove only disposable resources.
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
+  - [Prepare an assumed-role CLI profile](#prepare-an-assumed-role-cli-profile).
+  - [Happy path: Alpha principal reads the Alpha object](#happy-path-alpha-principal-reads-the-alpha-object).
+  - [Unhappy path: Alpha principal reads the Beta object](#unhappy-path-alpha-principal-reads-the-beta-object).
+  - [Remove the temporary CLI profile](#remove-the-temporary-cli-profile).
 - [Investigating in the Console](#investigating-in-the-console).
 - [Evidence and security analysis](#evidence-and-security-analysis).
 - [Clean up](#clean-up).
@@ -73,49 +77,53 @@ source terraform/lab/week2/exercise6/.env
 
 The global environment must be sourced first because the exercise file refers
 to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
-`TF_MANAGEMENT_ACCOUNT_ID`, and `TF_HOME_REGION`.
+`TF_MANAGEMENT_ACCOUNT_ID`, and `TF_HOME_REGION`. The exercise also consumes
+`TF_VAR_lab_bucket_name_prefix`, which must be identical to the prefix used when
+`WorkloadLabAdministrator` was deployed. The permission set authorizes
+`s3:CreateBucket` only for bucket ARNs under that configured prefix.
 
-The exercise state owns only resources under `/week2/exercise6/` and the
-explicit fixture resources described by the objective. Existing Control Tower,
-Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+The exercise state owns `Week2Exercise6Role`, one disposable S3 bucket, and
+two tagged test objects. The role has `Project=Alpha`; the objects have
+`Project=Alpha` and `Project=Beta`. Existing Control Tower, Identity Center,
+baseline, and `AWSReservedSSO_*` resources remain outside its ownership
+boundary. The root reads and attaches the existing
+`/week2/WorkloadLabRoleBoundary` without taking ownership of that policy.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The role policy implements project matching for S3 objects:
 
 ```hcl
-resource "aws_iam_role_policy" "exercise" {
-  role = aws_iam_role.exercise.id
-  name = "Exercise6Policy"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["sts:GetCallerIdentity"]
-      Resource = "*"
-    }]
-  })
+{
+  Sid      = "ReadObjectsForMatchingProject"
+  Effect   = "Allow"
+  Action   = "s3:GetObject"
+  Resource = "${aws_s3_bucket.exercise.arn}/*"
+  Condition = {
+    StringEquals = {
+      "s3:ExistingObjectTag/Project" = "$${aws:PrincipalTag/Project}"
+    }
+  }
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise6/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
-policy is not a substitute for an identity Allow.
+Inspect the complete declaration in
+[`main.tf`](../../../../terraform/lab/week2/exercise6/main.tf) before applying.
+The doubled dollar sign is Terraform escaping; the rendered IAM policy contains
+`${aws:PrincipalTag/Project}`, which IAM resolves from the role session.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
-`sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise6/main.tf).
+The identity policy is associated with `Week2Exercise6Role`. It allows
+`s3:GetObject` only for objects in the exercise bucket and only when the
+object's existing `Project` tag equals the principal's `Project` tag. The role
+tag becomes a principal tag in its role sessions, so this fixture compares
+`Alpha` from the role with `Alpha` or `Beta` on each object. There is no
+explicit Deny: a mismatch means this conditional Allow does not apply, leaving
+an implicit deny. The policy does not allow changing principal or object tags.
+Tag-governance permissions remain security-sensitive because a principal able
+to rewrite either authorization attribute could bypass the intended project
+separation.
 
 ### Permissions-boundary excerpt
 
@@ -175,16 +183,14 @@ it from this exercise.
 
 #### Boundary analysis
 
-This boundary is associated with any role to which the baseline attaches it.
-It allows only the listed `sts:AssumeRole`, identity-verification, and Week 2
-S3 operations within the two lab accounts and configured bucket prefix. It
-intentionally does not allow arbitrary IAM administration, user or access-key
-management, managed-policy creation, or unrestricted access to other services.
-Its weak point is that the ceiling still permits the listed role and S3 actions
-when a separate identity policy grants them; a boundary cannot prevent an
-identity policy from granting an action that the boundary allows. The baseline
-owner must therefore protect both the boundary and the policies attached to
-bounded roles.
+The exercise root attaches this baseline-owned boundary to the Alpha role. It
+allows only the listed `sts:AssumeRole`, identity-verification, and Week 2 S3
+operations within the two lab accounts and configured bucket prefix. It does
+not allow arbitrary IAM administration, user or access-key management,
+managed-policy creation, or unrestricted access to other services. The
+boundary permits `s3:GetObject`, but that ceiling does not grant object access;
+the role's ABAC identity policy must also allow the request. The baseline owner
+protects the boundary while this exercise owns the narrower ABAC grant.
 
 
 ## Configure, initialize, and validate
@@ -202,37 +208,129 @@ terraform -chdir=terraform/lab/week2/exercise6 validate
 terraform -chdir=terraform/lab/week2/exercise6 plan
 ```
 
-Review the plan before applying. It must not modify organizational governance,
-Control Tower resources, Identity Center resources, or unrelated accounts.
-Stop for unexplained replacements or deletions.
+Review the plan before applying. It should create one bounded `Project=Alpha`
+role, one bucket named with the configured `lab_bucket_name_prefix`, and two
+objects tagged `Project=Alpha` and `Project=Beta`. Confirm that the planned
+bucket name begins with the exact prefix configured in the central workload
+access root. It must not modify
+organizational governance, Control Tower resources, Identity Center resources,
+or unrelated accounts. Stop for unexplained replacements or deletions.
 
 ## Execute the experiment
 
-Apply only the reviewed plan:
+Apply only the reviewed plan and capture its nonsensitive outputs:
 
 ```bash
 terraform -chdir=terraform/lab/week2/exercise6 apply
-echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise6 output -raw role_arn)"
+export EXERCISE6_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw role_arn)"
+export EXERCISE6_ALPHA_URI="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw alpha_object_uri)"
+export EXERCISE6_BETA_URI="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw beta_object_uri)"
 ```
 
-Run the exercise-specific positive and negative tests from the objective. Keep
-an evidence table with: caller, action, resource, expected result, actual
-result, CloudTrail event ID, and the policy layer that explains it.
+Keep an evidence table with the role-session ARN, principal tag, object URI,
+object tag, expected result, actual result, CLI exit status, CloudTrail event
+ID, and determining policy condition.
+
+### Prepare an assumed-role CLI profile
+
+Create a temporary AWS config containing an assumed-role profile. It delegates
+credential acquisition to the AWS CLI and does not print or persist the
+temporary STS access key, secret key, or session token. Copying the existing
+config preserves the SSO-session definition used by `source_profile`.
+
+```bash
+export EXERCISE6_AWS_CONFIG="$(mktemp)"
+chmod 600 "$EXERCISE6_AWS_CONFIG"
+cp "${AWS_CONFIG_FILE:-$HOME/.aws/config}" "$EXERCISE6_AWS_CONFIG"
+cat >>"$EXERCISE6_AWS_CONFIG" <<EOF
+
+[profile week2-exercise6-alpha]
+role_arn = $EXERCISE6_ROLE_ARN
+source_profile = $TF_VAR_source_aws_profile
+role_session_name = exercise6-alpha
+EOF
+
+AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws sts get-caller-identity \
+  --profile week2-exercise6-alpha \
+  --no-cli-pager
+```
+
+Confirm that the returned ARN contains
+`assumed-role/Week2Exercise6Role/exercise6-alpha`. Stop if it shows the wrong
+account or role. The resulting role session has the role's `Project=Alpha`
+principal tag.
+
+### Happy path: Alpha principal reads the Alpha object
+
+Prediction: `s3:GetObject` succeeds because the principal and object both have
+`Project=Alpha`, the identity-policy condition matches, and the permissions
+boundary also allows `s3:GetObject` within the approved bucket prefix.
+
+```bash
+AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3 cp \
+  "$EXERCISE6_ALPHA_URI" - \
+  --profile week2-exercise6-alpha \
+  --no-cli-pager
+```
+
+Expected result: the command exits with status `0` and prints `Project Alpha
+test object.`. This is the positive authorization result for matching project
+attributes.
+
+### Unhappy path: Alpha principal reads the Beta object
+
+Prediction: the same role session and `s3:GetObject` action are denied for the
+Beta object. The object's `Project=Beta` value does not equal the session's
+`Project=Alpha` principal tag, so the conditional Allow does not apply.
+
+```bash
+if beta_result="$(AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3 cp \
+  "$EXERCISE6_BETA_URI" - \
+  --profile week2-exercise6-alpha \
+  --no-cli-pager 2>&1)"; then
+  echo "UNEXPECTED: Alpha principal read the Beta object: $beta_result" >&2
+else
+  echo "$beta_result"
+  case "$beta_result" in
+    *AccessDenied*) echo "Project tag mismatch was denied as expected." ;;
+    *) echo "UNEXPECTED: failure was not AccessDenied; do not count this as a valid negative test." >&2 ;;
+  esac
+fi
+```
+
+Expected result: S3 returns `AccessDenied`, the AWS CLI takes the `else` branch,
+and no object content is returned. An expired SSO login, missing object, wrong
+account, malformed URI, or network error is not a valid negative result. The
+caller, action, bucket, and role policy remain constant; only the object's
+`Project` tag differs.
+
+### Remove the temporary CLI profile
+
+The temporary file contains profile configuration but no static or copied AWS
+credentials. Remove it and clear the exercise variables after collecting
+evidence:
+
+```bash
+rm -f "$EXERCISE6_AWS_CONFIG"
+unset EXERCISE6_AWS_CONFIG EXERCISE6_ROLE_ARN
+unset EXERCISE6_ALPHA_URI EXERCISE6_BETA_URI
+```
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller
-    participant AWS as AWS authorization
-    participant E as Exercise resource
-    C->>AWS: Request selected API action
-    AWS->>AWS: Evaluate all applicable policy layers
-    AWS->>E: Permit or reject request
-    AWS-->>C: Result and request metadata
+    participant A as Alpha role session
+    participant S3 as Amazon S3 authorization
+    participant O as Tagged object
+    A->>S3: GetObject on Project=Alpha object
+    S3->>O: Compare principal and existing-object tags
+    S3-->>A: Allowed
+    A->>S3: GetObject on Project=Beta object
+    S3->>O: Compare principal and existing-object tags
+    S3-->>A: AccessDenied
 ```
 
-For Exercise 6, the central comparison is: **Allow access when principal and resource project attributes match.** Do
-not add permissions until the current policy evaluation and CloudTrail evidence
-have been documented.
+Do not grant tag-mutation permissions to the exercise role or weaken the
+condition to make the denied test pass.
 
 ## Investigating in the Console
 
@@ -240,10 +338,10 @@ Use IAM Identity Center access-portal sessions, not IAM user keys. Verify the
 account ID in the console account menu before inspecting anything.
 
 1. Open **IAM** and inspect the exercise role under `/week2/exercise6/`.
-2. Review its trust relationship, identity policies, tags, and permissions
-   boundary where present.
-3. Open the relevant resource service and verify the resource ARN, tags,
-   ownership controls, or resource policy.
+2. Review its `Project=Alpha` tag, trust relationship, ABAC identity policy,
+   and attached `/week2/WorkloadLabRoleBoundary`.
+3. Open the S3 bucket and verify the Alpha and Beta object tags, encryption,
+   versioning, and public-access block.
 4. In **CloudTrail → Event history**, filter for the API action under test and
    compare the principal, resource, request parameters, and error code.
 5. From an approved management-account session, inspect inherited SCPs without
@@ -287,6 +385,9 @@ empty, remove temporary access, and verify `git status` before committing.
 - [IAM permissions boundaries](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html).
 - [IAM roles and trust policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html).
 - [IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html).
+- [Attribute-based access control with IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction_attribute-based-access-control.html).
+- [AWS global condition context keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html).
+- [Amazon S3 policy condition keys](https://docs.aws.amazon.com/AmazonS3/latest/userguide/amazon-s3-policy-keys.html).
 - [AWS CloudTrail event history](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html).
 - [AWS STS](https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html).
 - [AWS IAM service authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html).

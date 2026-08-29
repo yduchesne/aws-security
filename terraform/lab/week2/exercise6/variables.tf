@@ -24,6 +24,33 @@ variable "common_tags" {
   }
 }
 
+variable "lab_role_boundary_name" {
+  description = "Pre-provisioned boundary required by every exercise role."
+  type        = string
+  default     = "WorkloadLabRoleBoundary"
+}
+
+variable "lab_role_boundary_path" {
+  description = "Path of the pre-provisioned lab role boundary."
+  type        = string
+  default     = "/week2/"
+}
+
+variable "lab_bucket_name_prefix" {
+  description = "Globally scoped bucket-name prefix authorized by WorkloadLabAdministrator."
+  type        = string
+  default     = "aws-security-week2-"
+
+  validation {
+    condition = (
+      can(regex("^aws-security-week2-[a-z0-9-]*$", var.lab_bucket_name_prefix)) &&
+      endswith(var.lab_bucket_name_prefix, "-") &&
+      length(var.lab_bucket_name_prefix) <= 40
+    )
+    error_message = "lab_bucket_name_prefix must begin with aws-security-week2-, end with a hyphen, and be no longer than 40 characters."
+  }
+}
+
 variable "target_account_id" {
   description = "Dev/Test lab target account ID used by the exercise context."
   type        = string

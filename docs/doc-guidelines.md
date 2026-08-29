@@ -143,6 +143,56 @@ Understand the scenario
   → Clean up only disposable resources
 ```
 
+### Happy- and unhappy-path tests
+
+Every exercise must provide executable tests for both positive and negative
+outcomes. An exercise is not complete unless it includes both:
+
+- A **happy-path (positive) test** in which the intended principal, request
+  context, resource, configuration, and policy conditions are correct and the
+  operation is expected to succeed.
+- An **unhappy-path (negative) test** in which an unauthorized principal,
+  missing or incorrect context value, out-of-scope resource, invalid
+  configuration, or other deliberately incorrect condition causes the
+  operation to be denied or rejected as designed.
+
+This requirement applies to every exercise, not only exercises whose primary
+topic is IAM authorization. For detection, validation, governance, and other
+security exercises, define the equivalent positive and negative outcomes—for
+example, an intended finding is detected while an in-scope configuration does
+not produce that finding, or a valid policy passes validation while an invalid
+policy is rejected.
+
+Label these tests explicitly, state the expected result before each command,
+and provide copyable commands whenever the operation can be tested safely. The
+happy path must verify the specific protected operation rather than an
+unrelated health check. The unhappy path should change one authorization factor
+at a time while keeping the caller, target, and operation constant where
+practical, so the denial can be attributed to the control under study.
+
+Denied or rejected tests must distinguish the expected security-control outcome
+from an expired login, wrong account or Region, malformed resource identifier,
+missing resource, network failure, tool failure, or other unrelated error. A
+command that fails for the wrong reason is not a successful negative test.
+Negative-test snippets should report an unexpected success clearly and must not
+print or persist temporary credentials if the operation unexpectedly succeeds.
+
+For every test, document:
+
+- The principal and account used.
+- The operation and target resource.
+- The policy or request-context difference being tested.
+- The predicted result.
+- The actual result and command exit status where relevant.
+- The expected AWS error code, validation result, finding state, or equivalent
+  negative outcome.
+- The CloudTrail event ID or other evidence when available.
+- The policy layer that explains the result.
+
+If a realistic happy-path operation would be destructive, costly, or unsafe,
+use the narrowest safe equivalent and explain the limitation. Do not weaken a
+security control merely to make a test pass.
+
 Documentation should identify:
 
 - Security objective.

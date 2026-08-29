@@ -1,7 +1,16 @@
 # Curriculum: Core
+locals {
+  boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+}
+
+data "aws_iam_policy" "lab_role_boundary" {
+  arn = local.boundary_arn
+}
+
 resource "aws_iam_role" "exercise" {
-  name = "Week2Exercise5Role"
-  path = "/week2/exercise5/"
+  name                 = "Week2Exercise5Role"
+  path                 = "/week2/exercise5/"
+  permissions_boundary = data.aws_iam_policy.lab_role_boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

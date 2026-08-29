@@ -23,6 +23,18 @@ variable "common_tags" {
     Curriculum = "Core"
   }
 }
+variable "lab_role_boundary_name" {
+  description = "Pre-provisioned boundary required by every exercise role."
+  type        = string
+  default     = "WorkloadLabRoleBoundary"
+}
+
+variable "lab_role_boundary_path" {
+  description = "Path of the pre-provisioned lab role boundary."
+  type        = string
+  default     = "/week2/"
+}
+
 variable "source_operator_role_arn" {
   type = string
 }
