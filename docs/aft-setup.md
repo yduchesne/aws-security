@@ -83,13 +83,13 @@ The account request repository is the normal account-vending interface after AFT
 
 An account request typically defines:
 
-- Account name;.
-- Unique account email address;.
-- Target governed OU;.
-- IAM Identity Center account-owner information;.
-- Account tags;.
-- Change-management metadata;.
-- Custom fields used by organizational workflows;.
+- Account name.
+- Unique account email address.
+- Target governed OU.
+- IAM Identity Center account-owner information.
+- Account tags.
+- Change-management metadata.
+- Custom fields used by organizational workflows.
 - The optional named account customization to apply.
 
 Conceptually:
@@ -130,10 +130,10 @@ The global customizations repository contains configuration applied to every acc
 
 Appropriate examples include:
 
-- Baseline IAM roles required by organizational automation;.
-- Organization-wide security integrations;.
-- Standard account metadata or tagging support;.
-- Common monitoring integrations;.
+- Baseline IAM roles required by organizational automation.
+- Organization-wide security integrations.
+- Standard account metadata or tagging support.
+- Common monitoring integrations.
 - Shared automation prerequisites.
 
 Global customizations must not recreate or take ownership of Control Tower-managed resources such as mandatory Control Tower roles, AWS Config resources, or centralized logging resources.
@@ -169,10 +169,10 @@ sandbox
 
 Appropriate examples include:
 
-- Roles and integrations required only by network accounts;.
-- Additional controls for security accounts;.
-- Workload-account security configuration;.
-- Restrictions or cost controls for sandbox accounts;.
+- Roles and integrations required only by network accounts.
+- Additional controls for security accounts.
+- Workload-account security configuration.
+- Restrictions or cost controls for sandbox accounts.
 - Account-type-specific integration resources.
 
 These customizations configure accounts; they are not the normal deployment mechanism for application infrastructure. Application resources should remain in application-specific Terraform roots and pipelines.
@@ -200,11 +200,11 @@ The account provisioning customizations repository extends the account-provision
 
 AFT supports provisioning-framework stages that can run before and after its account-provisioning API helper. Appropriate examples include:
 
-- Validating account-request metadata;.
-- Integrating with an IT service management or approval system;.
-- Reserving or retrieving data from an external IP address management system;.
-- Enriching requests with organizational metadata;.
-- Registering a newly provisioned account with an external system;.
+- Validating account-request metadata.
+- Integrating with an IT service management or approval system.
+- Reserving or retrieving data from an external IP address management system.
+- Enriching requests with organizational metadata.
+- Registering a newly provisioned account with an external system.
 - Invoking approved custom APIs during the provisioning lifecycle.
 
 Provisioning customizations should be deterministic, auditable, and safe to retry. External input must be validated, and credentials must be obtained through roles or managed secret mechanisms rather than committed to source control.
@@ -217,11 +217,11 @@ AFT is designed around four repository inputs and separate pipeline responsibili
 
 Separation provides:
 
-- Independent permissions and branch protections;.
-- Clearer ownership between account vending and customization teams;.
-- Smaller review scopes;.
-- Distinct pipeline triggers;.
-- Reduced risk that a customization change accidentally submits an account request;.
+- Independent permissions and branch protections.
+- Clearer ownership between account vending and customization teams.
+- Smaller review scopes.
+- Distinct pipeline triggers.
+- Reduced risk that a customization change accidentally submits an account request.
 - Auditable change histories for each responsibility.
 
 These repositories may initially contain minimal valid AFT structures. They do not need complete production customization content before the AFT OU and account are created.
@@ -246,11 +246,11 @@ Seeing AWS Connector for GitHub under **Authorized GitHub Apps** does not prove 
 
 Before applying `terraform/aft/platform`, verify that:
 
-- All four repositories exist;.
-- Each repository contains the branch specified by `repository_branch`, currently `main` by default;.
-- Repository names use `owner/repository` format for GitHub;.
-- Repository policies permit the intended AFT access;.
-- No credentials or tokens are committed to a repository;.
+- All four repositories exist.
+- Each repository contains the branch specified by `repository_branch`, currently `main` by default.
+- Repository names use `owner/repository` format for GitHub.
+- Repository policies permit the intended AFT access.
+- No credentials or tokens are committed to a repository.
 - `AFTPlatformAdministration` is assigned to the named human administrator in the AFT management account.
 
 The AFT module creates the CodeConnections resource during platform deployment. Therefore, the connection cannot be fully authorized before the platform root creates it.
@@ -300,13 +300,13 @@ A GitHub App installation can be shared by multiple AWS connections. Before narr
 
 After installation and authorization:
 
-- Verify `ct-aft-github-connection` remains `AVAILABLE`;.
-- Inspect every AFT CodePipeline source stage;.
-- Confirm each source references one of the four expected repositories and the `main` branch;.
-- Retry source stages that failed while the connection was `PENDING`;.
-- Verify no unrelated repository is available to the GitHub App installation;.
-- Keep all repositories private unless public access is explicitly required;.
-- Protect `main`, require pull requests and review, and enable secret scanning;.
+- Verify `ct-aft-github-connection` remains `AVAILABLE`.
+- Inspect every AFT CodePipeline source stage.
+- Confirm each source references one of the four expected repositories and the `main` branch.
+- Retry source stages that failed while the connection was `PENDING`.
+- Verify no unrelated repository is available to the GitHub App installation.
+- Keep all repositories private unless public access is explicitly required.
+- Protect `main`, require pull requests and review, and enable secret scanning.
 - Do not create manual webhooks, deploy keys, personal access tokens, or stored AWS credentials for this integration.
 
 The effective repository boundary is the intersection of:
@@ -341,17 +341,17 @@ With `aft_enable_vpc = false`, AFT does not attach its Lambda and CodeBuild work
 
 Disabling the VPC provides:
 
-- No AFT-created NAT gateway hourly or data-processing charges;.
-- No AFT-created interface endpoint hourly or data-processing charges;.
-- Fewer networking resources to operate and troubleshoot;.
+- No AFT-created NAT gateway hourly or data-processing charges.
+- No AFT-created interface endpoint hourly or data-processing charges.
+- Fewer networking resources to operate and troubleshoot.
 - Simpler initial AFT deployment.
 
 Disabling the VPC also means AFT customization workloads cannot directly use private VPC connectivity. This configuration is unsuitable if AFT must reach:
 
-- Private APIs or services with no public endpoint;.
-- Private package or artifact repositories;.
-- On-premises services reachable only through VPN or Direct Connect;.
-- Resources reachable only through Transit Gateway;.
+- Private APIs or services with no public endpoint.
+- Private package or artifact repositories.
+- On-premises services reachable only through VPN or Direct Connect.
+- Resources reachable only through Transit Gateway.
 - Services restricted to selected VPC endpoints or private networks.
 
 Public network reachability must not be confused with public repository visibility. The GitHub repositories may remain private; AWS CodeConnections provides the authorized source integration. Repository and connection permissions must still follow least privilege.

@@ -32,11 +32,11 @@ Before every apply:
 
 Never approve a plan that unexpectedly proposes replacement or deletion of:
 
-- The AWS Organization;.
-- The Control Tower landing zone;.
-- Control Tower shared accounts;.
-- A governed OU baseline;.
-- The AFT management account;.
+- The AWS Organization.
+- The Control Tower landing zone.
+- Control Tower shared accounts.
+- A governed OU baseline.
+- The AFT management account.
 - Control Tower-created IAM Identity Center resources.
 
 Do not use `-auto-approve` for these foundational roots.
@@ -126,9 +126,9 @@ See [`aft-setup.md`](aft-setup.md) for repository responsibilities and network t
 
 The bootstrap root owns:
 
-- AWS Organizations foundation;.
-- Foundational non-AFT OUs;.
-- Control Tower shared accounts;.
+- AWS Organizations foundation.
+- Foundational non-AFT OUs.
+- Control Tower shared accounts.
 - Control Tower landing zone and prerequisites.
 
 It does not own the AFT OU or AFT management account.
@@ -142,10 +142,10 @@ It does not own the AFT OU or AFT management account.
 
 Review the plan carefully. It must not propose:
 
-- Replacing the AWS Organization;.
-- Disabling `SERVICE_CONTROL_POLICY`;.
-- Removing trusted service access;.
-- Replacing an existing Control Tower landing zone;.
+- Replacing the AWS Organization.
+- Disabling `SERVICE_CONTROL_POLICY`.
+- Removing trusted service access.
+- Replacing an existing Control Tower landing zone.
 - Replacing Control Tower shared accounts.
 
 ### Apply
@@ -244,14 +244,14 @@ Verify that the plan creates only project-owned resources. The parent plan shoul
 
 After apply:
 
-- Verify the workload groups are initially empty;.
-- Verify both test users have no memberships or account assignments;.
-- Manually activate the test users, register MFA, and keep any temporary test access documented and time-bounded;.
-- Verify Test and Production operator access has no write actions;.
-- Activate the named human identities as required;.
-- Register strong MFA;.
-- Verify the one-hour privileged sessions;.
-- Test expected allowed and denied operations;.
+- Verify the workload groups are initially empty.
+- Verify both test users have no memberships or account assignments.
+- Manually activate the test users, register MFA, and keep any temporary test access documented and time-bounded.
+- Verify Test and Production operator access has no write actions.
+- Activate the named human identities as required.
+- Register strong MFA.
+- Verify the one-hour privileged sessions.
+- Test expected allowed and denied operations.
 - Document the accountable owner of each persona.
 
 ### Convergence check
@@ -291,7 +291,7 @@ The initial AFT deployment therefore uses one sequential apply command. Terrafor
 
 `terraform/aft/org_unit` creates:
 
-- The dedicated AFT OU;.
+- The dedicated AFT OU.
 - `AWSControlTowerBaseline` version `5.0` for that OU.
 
 The plan must not show:
@@ -325,16 +325,16 @@ AFTPlatformAdministration
 
 It then:
 
-- Looks up the existing Account Factory human user using `TF_VAR_sso_aft_user_email`;.
-- Adds that user to `AFTPlatformAdministrators`;.
+- Looks up the existing Account Factory human user using `TF_VAR_sso_aft_user_email`.
+- Adds that user to `AFTPlatformAdministrators`.
 - Assigns `AFTPlatformAdministration` only to the AFT management account.
 
 The root must not create, modify, import, or delete the existing Account Factory user.
 
 The permission set provides:
 
-- Read-only AFT troubleshooting access;.
-- The AWS-documented CodeConnections console handshake permissions, including `StartOAuthHandshake` and `UpdateConnectionInstallation`;.
+- Read-only AFT troubleshooting access.
+- The AWS-documented CodeConnections console handshake permissions, including `StartOAuthHandshake` and `UpdateConnectionInstallation`.
 - Limited start, stop, and retry operations for pipelines in the AFT account.
 
 It explicitly denies IAM mutation, Identity Store mutation, permission-set and account-assignment mutation, and Organizations mutation.
@@ -353,8 +353,8 @@ aft_enable_vpc = false
 
 It must not create:
 
-- An AFT VPC;.
-- NAT gateways;.
+- An AFT VPC.
+- NAT gateways.
 - AFT interface VPC endpoints.
 
 The four GitHub repositories and their `main` branches must exist before this root runs.
@@ -415,17 +415,17 @@ After CodeConnections authorization, run:
 
 Expected results:
 
-- The Workloads, Dev, Test, and Prod OU baselines remain version `5.0` and `SUCCEEDED`;.
-- The AFT OU baseline remains version `5.0` and `SUCCEEDED`;.
-- The AFT management account remains enrolled;.
-- The Account Factory provisioned product remains `AVAILABLE`;.
-- The existing Account Factory user is unchanged;.
-- Workload groups contain only approved named humans;.
-- Workload permission sets and assignments match the approved environment matrix;.
+- The Workloads, Dev, Test, and Prod OU baselines remain version `5.0` and `SUCCEEDED`.
+- The AFT OU baseline remains version `5.0` and `SUCCEEDED`.
+- The AFT management account remains enrolled.
+- The Account Factory provisioned product remains `AVAILABLE`.
+- The existing Account Factory user is unchanged.
+- Workload groups contain only approved named humans.
+- Workload permission sets and assignments match the approved environment matrix.
 - `AFTPlatformAdministration` is assigned only to the AFT account;
-- The CodeConnections connection is `AVAILABLE`;.
-- AFT pipelines reference the expected repositories and branches;.
-- No AFT NAT gateways or interface endpoints exist;.
+- The CodeConnections connection is `AVAILABLE`.
+- AFT pipelines reference the expected repositories and branches.
+- No AFT NAT gateways or interface endpoints exist.
 - All Terraform roots are converged.
 
 If a plan proposes an unexplained replacement or deletion, stop and investigate rather than applying it.

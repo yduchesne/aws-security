@@ -8,6 +8,20 @@ same safety model as Exercises 1 and 2: predict the decision, deploy the
 smallest test fixture, run positive and negative tests, capture CloudTrail
 evidence, and remove only disposable resources.
 
+## Table of contents
+
+- [Introduction](#introduction).
+- [Learning objectives](#learning-objectives).
+- [Terraform configuration and ownership](#terraform-configuration-and-ownership).
+  - [Policy/resource excerpt](#policyresource-excerpt).
+  - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
+- [Configure, initialize, and validate](#configure-initialize-and-validate).
+- [Execute the experiment](#execute-the-experiment).
+- [Investigating in the Console](#investigating-in-the-console).
+- [Evidence and security analysis](#evidence-and-security-analysis).
+- [Clean up](#clean-up).
+- [References](#references).
+
 ## Introduction
 
 This exercise focuses on **evidence-based least privilege**. Its objective is to compare granted permissions with observed use without overclaiming. An Allow
@@ -35,7 +49,7 @@ flowchart LR
 
 ## Terraform configuration and ownership
 
-The configuration is in `terraform/lab/week2/exercise12/`. It has an
+The configuration is in [`terraform/lab/week2/exercise12/main.tf`](../../../../terraform/lab/week2/exercise12/main.tf) and the other Terraform files in that directory. It has an
 independent encrypted S3 backend key:
 
 ```text
@@ -52,8 +66,7 @@ From the repository root, use this order before running Terraform:
 
 ```bash
 source ~/.env/aws-security/terraform/.env
-cp terraform/lab/week2/exercise12/.env.example \
-  terraform/lab/week2/exercise12/.env
+cp terraform/lab/week2/exercise12/.env.example terraform/lab/week2/exercise12/.env
 # Edit the copied .env and replace placeholders or desired values.
 source terraform/lab/week2/exercise12/.env
 ```
@@ -86,10 +99,93 @@ resource "aws_iam_role_policy" "exercise" {
 }
 ```
 
-For the exercise-specific policy, inspect `main.tf` before applying and record
+For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise12/main.tf) before applying and record
 its principal, actions, resources, conditions, and any explicit denies. A
 permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
+
+#### Policy/resource analysis
+
+This excerpt is the identity policy associated with the exercise role. Its
+principal is the role itself, and its only Allow is the harmless
+`sts:GetCallerIdentity` action on all resources. It is intended to permit
+identity verification, not access to arbitrary workload resources. It does not
+trust any principal; trust is defined separately by the role's assume-role
+policy. It intentionally contains no explicit Deny, so the absence of an Allow
+for other actions produces an implicit deny. The wildcard resource is a weak
+point for readability, although this identity-verification action does not
+provide a narrower resource scope. Always compare this excerpt with the role
+trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise12/main.tf).
+
+### Permissions-boundary excerpt
+
+The authoritative boundary declaration is
+[`workload-lab-role-boundary.json.tftpl`](../../../../terraform/lab/week2/baseline/policies/workload-lab-role-boundary.json.tftpl).
+The following excerpt is taken from the original policy JSON template; its
+`${partition}`, `${dev_lab_account_id}`, `${test_lab_account_id}`, and
+`${lab_bucket_name_prefix}` values are rendered by the baseline Terraform root:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAssumingBoundedWeekTwoRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:${partition}:iam::${dev_lab_account_id}:role/week2/*",
+        "arn:${partition}:iam::${test_lab_account_id}:role/week2/*"
+      ]
+    },
+    {
+      "Sid": "AllowReadCurrentIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowWeekTwoLabBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:${partition}:s3:::${lab_bucket_name_prefix}*",
+        "arn:${partition}:s3:::${lab_bucket_name_prefix}*/*"
+      ]
+    }
+  ]
+}
+```
+
+This is a permissions boundary, so it defines a maximum-permissions ceiling;
+it does not grant these actions by itself. An identity policy must also allow
+an operation, and applicable SCPs, session policies, resource policies, trust
+policies, and explicit denies remain additional constraints. The policy is
+owned by the baseline Terraform root. Do not edit, import, replace, or destroy
+it from this exercise.
+
+#### Boundary analysis
+
+This boundary is associated with any role to which the baseline attaches it.
+It allows only the listed `sts:AssumeRole`, identity-verification, and Week 2
+S3 operations within the two lab accounts and configured bucket prefix. It
+intentionally does not allow arbitrary IAM administration, user or access-key
+management, managed-policy creation, or unrestricted access to other services.
+Its weak point is that the ceiling still permits the listed role and S3 actions
+when a separate identity policy grants them; a boundary cannot prevent an
+identity policy from granting an action that the boundary allows. The baseline
+owner must therefore protect both the boundary and the policies attached to
+bounded roles.
+
 
 ## Configure, initialize, and validate
 
@@ -101,8 +197,7 @@ aws sts get-caller-identity --profile "$TF_VAR_source_aws_profile"
 terraform -chdir=terraform/lab/week2/exercise12 init \
   -backend-config="bucket=$TF_STATE_BUCKET" \
   -backend-config="region=$TF_STATE_REGION" \
-  -backend-config="profile=${TF_STATE_PROFILE:-ct-bootstrap}"
-terraform -chdir=terraform/lab/week2/exercise12 fmt -check
+  -backend-config="profile=$TF_STATE_PROFILE"
 terraform -chdir=terraform/lab/week2/exercise12 validate
 terraform -chdir=terraform/lab/week2/exercise12 plan
 ```
@@ -117,7 +212,7 @@ Apply only the reviewed plan:
 
 ```bash
 terraform -chdir=terraform/lab/week2/exercise12 apply
-terraform -chdir=terraform/lab/week2/exercise12 output
+echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise12 output -raw role_arn)"
 ```
 
 Run the exercise-specific positive and negative tests from the objective. Keep

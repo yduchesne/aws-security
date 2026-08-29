@@ -42,10 +42,10 @@ terraform/aft/platform
 
 Its responsibilities include:
 
-- Establishing and maintaining the initial Organizations and Control Tower configuration;.
-- Creating and governing the dedicated AFT OU;.
-- Submitting the AFT management account request through Control Tower Account Factory;.
-- Launching the AFT platform module from the Control Tower management account;.
+- Establishing and maintaining the initial Organizations and Control Tower configuration.
+- Creating and governing the dedicated AFT OU.
+- Submitting the AFT management account request through Control Tower Account Factory.
+- Launching the AFT platform module from the Control Tower management account.
 - Verifying successful convergence before handoff to steady-state operations.
 
 Although the AFT platform module is launched with management-account credentials, it installs operational resources into the AFT management account and Control Tower shared accounts as required.
@@ -248,12 +248,12 @@ For a small environment, one named identity with separate read-only and elevated
 
 Every human identity must:
 
-- Belong to one accountable person;.
-- Use MFA appropriate to the identity source;.
-- Avoid shared credentials;.
-- Receive access through reviewed group membership;.
-- Have unnecessary assignments removed promptly;.
-- Be disabled promptly during offboarding;.
+- Belong to one accountable person.
+- Use MFA appropriate to the identity source.
+- Avoid shared credentials.
+- Receive access through reviewed group membership.
+- Have unnecessary assignments removed promptly.
+- Be disabled promptly during offboarding.
 - Be included in periodic group, permission-set, and account-assignment reviews.
 
 ### Break-glass access
@@ -306,9 +306,9 @@ TF_VAR_sso_identity_store_admin_last_name
 
 Responsibilities include:
 
-- Creating, reading, updating, and deleting Identity Center users;.
-- Creating, reading, updating, and deleting groups;.
-- Managing group memberships;.
+- Creating, reading, updating, and deleting Identity Center users.
+- Creating, reading, updating, and deleting groups.
+- Managing group memberships.
 - Performing identity onboarding, role-change, and offboarding tasks.
 
 This persona does not receive permission-set or account-assignment APIs through its project permission set.
@@ -339,9 +339,9 @@ TF_VAR_sso_permission_set_admin_last_name
 
 Responsibilities include:
 
-- Creating and updating permission-set definitions;.
-- Managing managed-policy attachments and customer-managed-policy references;.
-- Managing inline policies and permission boundaries;.
+- Creating and updating permission-set definitions.
+- Managing managed-policy attachments and customer-managed-policy references.
+- Managing inline policies and permission boundaries.
 - Managing permission-set metadata and session settings.
 
 Its permission set explicitly denies account-assignment creation and deletion. Permission definition is therefore separated from assigning that permission to a principal in an AWS account.
@@ -372,9 +372,9 @@ TF_VAR_sso_access_assignment_admin_last_name
 
 Responsibilities include:
 
-- Discovering approved users, groups, permission sets, and AWS accounts;.
-- Creating and deleting account assignments;.
-- Monitoring assignment creation and deletion status;.
+- Discovering approved users, groups, permission sets, and AWS accounts.
+- Creating and deleting account assignments.
+- Monitoring assignment creation and deletion status.
 - Assigning existing, approved permission sets to authorized principals and accounts.
 
 Its permission set explicitly denies permission-set creation and policy mutation. Access assignment is therefore separated from permission definition.
@@ -454,15 +454,15 @@ Multiple administrators
 
 For all three administrative personas:
 
-- Assign different accountable human owners where possible;.
-- Require strong MFA;.
-- Retain the default one-hour privileged session duration unless a shorter supported duration is adopted;.
-- Prohibit shared credentials and unattended use;.
-- Require independent review for protected-group membership;.
-- Require independent review for administrative permission-set changes;.
-- Require additional approval for management-account assignments;.
-- Alert on user, group, membership, permission-set, and assignment changes;.
-- Periodically reconcile live resources with Terraform and approved access records;.
+- Assign different accountable human owners where possible.
+- Require strong MFA.
+- Retain the default one-hour privileged session duration unless a shorter supported duration is adopted.
+- Prohibit shared credentials and unattended use.
+- Require independent review for protected-group membership.
+- Require independent review for administrative permission-set changes.
+- Require additional approval for management-account assignments.
+- Alert on user, group, membership, permission-set, and assignment changes.
+- Periodically reconcile live resources with Terraform and approved access records.
 - Never use these identities for AFT, CI/CD, or other automation.
 
 The intended future state is a reviewed Terraform workflow using OIDC-federated automation. Humans propose and independently approve changes; a protected deployment role applies them and cannot change its own trust or permissions.
@@ -513,22 +513,22 @@ Temporary role session in the AFT management account
 
 The Identity Center user may be used for:
 
-- Inspecting the AFT deployment;.
-- Reviewing pipeline and operational status;.
-- Troubleshooting failed AFT workflows;.
-- Reviewing logs and configuration;.
-- Performing explicitly authorized administrative work;.
+- Inspecting the AFT deployment.
+- Reviewing pipeline and operational status.
+- Troubleshooting failed AFT workflows.
+- Reviewing logs and configuration.
+- Performing explicitly authorized administrative work.
 - Emergency intervention when automated operations cannot recover safely.
 
 ### Inappropriate responsibilities
 
 The Identity Center user must not be used for:
 
-- Unattended Terraform runs;.
-- CI/CD pipeline credentials;.
-- Storing SSO session credentials in a pipeline or secret store;.
-- Normal AFT internal processing;.
-- General organization-wide automation;.
+- Unattended Terraform runs.
+- CI/CD pipeline credentials.
+- Storing SSO session credentials in a pipeline or secret store.
+- Normal AFT internal processing.
+- General organization-wide automation.
 - A shared automation or service identity.
 
 Where possible, Account Factory should reference an appropriate named human administrator rather than a shared user named for automation.
@@ -587,9 +587,9 @@ Terraform operation
 
 Suitable source identities include:
 
-- GitHub Actions using OIDC;.
-- GitLab CI using OIDC;.
-- AWS CodeBuild using its service role;.
+- GitHub Actions using OIDC.
+- GitLab CI using OIDC.
+- AWS CodeBuild using its service role.
 - Another CI platform using OIDC or SAML federation.
 
 The source automation identity should only be able to assume explicitly authorized target roles. The target role defines the permissions available in its account.
@@ -600,11 +600,11 @@ Production and non-production privileges should be independently assignable. Net
 
 Do not use:
 
-- Long-lived IAM user access keys for CI/CD;.
-- Exported IAM Identity Center browser-session credentials in pipelines;.
-- The human AFT account owner as a service identity;.
+- Long-lived IAM user access keys for CI/CD.
+- Exported IAM Identity Center browser-session credentials in pipelines.
+- The human AFT account owner as a service identity.
 - `ct-bootstrap` for steady-state automation;
-- A single unrestricted organization-wide automation role;.
+- A single unrestricted organization-wide automation role.
 - The Organizations management account as a general CI/CD host.
 
 ## Management Account Boundary

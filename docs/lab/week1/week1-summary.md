@@ -94,17 +94,17 @@ Understand which resources exist, which service created them, and which Terrafor
 
 Inventory the following without modifying them:
 
-- AWS Organization and Organizations root;.
-- OUs and account placement;.
-- Control Tower landing zone version, status, and drift status;.
-- Enabled Control Tower baselines and their targets;.
-- Control Tower controls currently enabled on each OU;.
-- IAM Identity Center instance, permission sets, and account assignments;.
-- Control Tower shared accounts;.
-- AFT OU and AFT account enrollment;.
-- Control Tower and AFT IAM roles;.
-- CloudFormation StackSets and stack instances;.
-- CloudTrail, AWS Config, and centralized logging resources;.
+- AWS Organization and Organizations root.
+- OUs and account placement.
+- Control Tower landing zone version, status, and drift status.
+- Enabled Control Tower baselines and their targets.
+- Control Tower controls currently enabled on each OU.
+- IAM Identity Center instance, permission sets, and account assignments.
+- Control Tower shared accounts.
+- AFT OU and AFT account enrollment.
+- Control Tower and AFT IAM roles.
+- CloudFormation StackSets and stack instances.
+- CloudTrail, AWS Config, and centralized logging resources.
 - AFT pipelines, Step Functions workflows, Lambda functions, DynamoDB tables, and CodeConnections connection.
 
 Create an ownership table:
@@ -121,10 +121,10 @@ Create an ownership table:
 
 Capture redacted CLI inventory, a current account/OU diagram, and a resource-ownership matrix. Explicitly distinguish:
 
-- Organizations membership;.
-- OU baseline enablement;.
-- Control Tower account enrollment;.
-- Control Tower controls;.
+- Organizations membership.
+- OU baseline enablement.
+- Control Tower account enrollment.
+- Control Tower controls.
 - AFT account management.
 
 AWS references:
@@ -312,13 +312,13 @@ Organization resource omitted enabled_policy_types
 
 Document:
 
-- Why omission in a Terraform-managed collection can imply removal;.
-- Why the management account is exceptionally sensitive;.
-- Which CloudTrail events record the policy-type change;.
-- Whether any controls were temporarily ineffective;.
-- How live AWS status differed from stale Terraform state;.
-- The code change that preserves `SERVICE_CONTROL_POLICY`;.
-- The runbook that prevents recurrence;.
+- Why omission in a Terraform-managed collection can imply removal.
+- Why the management account is exceptionally sensitive.
+- Which CloudTrail events record the policy-type change.
+- Whether any controls were temporarily ineffective.
+- How live AWS status differed from stale Terraform state.
+- The code change that preserves `SERVICE_CONTROL_POLICY`.
+- The runbook that prevents recurrence.
 - Residual risks associated with `ct-bootstrap` and management-account access.
 
 Do **not** disable SCPs again. The real incident already supplies the failure evidence.
@@ -407,13 +407,13 @@ Validate the complete account-vending path and create a safe target for future s
 
 Proceed only if:
 
-- The AFT deployment is healthy;.
-- CodeConnections is `AVAILABLE`;.
-- All four repositories and `main` branches exist;.
-- A dedicated test/sandbox OU is approved and governed;.
-- A unique account email is available;.
-- Expected account and security-service costs are accepted;.
-- Account closure and teardown responsibilities are documented;.
+- The AFT deployment is healthy.
+- CodeConnections is `AVAILABLE`.
+- All four repositories and `main` branches exist.
+- A dedicated test/sandbox OU is approved and governed.
+- A unique account email is available.
+- Expected account and security-service costs are accepted.
+- Account closure and teardown responsibilities are documented.
 - No production or shared account is used.
 
 If these prerequisites cannot be completed before Sunday, prepare and review the account request but defer merging it. That is an acceptable Week 1 outcome.

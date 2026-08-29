@@ -207,16 +207,16 @@ Automatic account enrollment governs what happens to eligible accounts created o
 
 This setting is distinct from account creation through Control Tower Account Factory:
 
-- The AFT management account is provisioned by the built-in Control Tower Account Factory and is enrolled as part of that workflow;.
-- After AFT is operational, AFT invokes the Control Tower account-provisioning workflow for ordinary accounts;.
+- The AFT management account is provisioned by the built-in Control Tower Account Factory and is enrolled as part of that workflow.
+- After AFT is operational, AFT invokes the Control Tower account-provisioning workflow for ordinary accounts.
 - Neither workflow depends on general automatic account enrollment being enabled.
 
 Leaving automatic enrollment off supports the following controls:
 
-- AFT remains the standard post-bootstrap account-vending path;.
-- Enrollment of accounts created outside Account Factory remains explicit and reviewable;.
-- Moving an existing account into a governed OU does not trigger unexpected Control Tower changes;.
-- Accounts that may not meet Control Tower enrollment prerequisites are not enrolled automatically;.
+- AFT remains the standard post-bootstrap account-vending path.
+- Enrollment of accounts created outside Account Factory remains explicit and reviewable.
+- Moving an existing account into a governed OU does not trigger unexpected Control Tower changes.
+- Accounts that may not meet Control Tower enrollment prerequisites are not enrolled automatically.
 - Governance transitions remain deliberate operations.
 
 Before `terraform/aft/platform/` runs, operators must verify that the AFT management account is enrolled successfully and visible in Control Tower. OU membership by itself is not evidence of enrollment.

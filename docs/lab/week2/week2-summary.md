@@ -158,7 +158,7 @@ STS AssumeRole ─────────────────────�
 Create in the **target account**:
 
 -   `CrossAccountReadRole`
--   Trust policy permitting only a specific source role;.
+-   Trust policy permitting only a specific source role.
 -   Permissions allowing a narrow set of read operations, such as
     listing/describing a test S3 bucket or selected resources.
 
@@ -183,19 +183,19 @@ aws sts assume-role \
 
 Export/use the returned temporary credentials and verify:
 
--   Allowed read operation succeeds;.
--   Write operation fails;.
--   Unrelated resource access fails;.
+-   Allowed read operation succeeds.
+-   Write operation fails.
+-   Unrelated resource access fails.
 -   Assumption by an untrusted principal fails.
 
 ### Investigation
 
 Inspect the `AssumeRole` CloudTrail event and identify:
 
--   Calling principal;.
--   Target role;.
--   Session name;.
--   Source IP;.
+-   Calling principal.
+-   Target role.
+-   Session name.
+-   Source IP.
 -   Resulting assumed-role ARN.
 
 ### Learning outcome
@@ -506,8 +506,8 @@ aws:ResourceTag/Project
 
 Determine whether the principal can:
 
--   Change its own authorization-relevant tags;.
--   Change resource tags;.
+-   Change its own authorization-relevant tags.
+-   Change resource tags.
 -   Create resources with arbitrary `Project` tags.
 
 This is critical: an ABAC system can be undermined if a principal can
@@ -595,10 +595,10 @@ Verify that no static AWS access key was placed on the host.
 
 ### Tests
 
--   Allowed resource succeeds;.
--   Unrelated resource fails;.
--   Replace/detach the role and observe behavior;.
--   Inspect CloudTrail to identify the role session;.
+-   Allowed resource succeeds.
+-   Unrelated resource fails.
+-   Replace/detach the role and observe behavior.
+-   Inspect CloudTrail to identify the role session.
 -   Inspect how credentials are automatically rotated.
 
 ### Security analysis
@@ -642,19 +642,19 @@ temporary AWS credentials
 
 Create:
 
--   CircleCI OIDC provider;.
--   Narrowly scoped Terraform plan/deployment role;.
+-   CircleCI OIDC provider.
+-   Narrowly scoped Terraform plan/deployment role.
 -   Trust-policy conditions restricting which CircleCI project/context
-    may assume it;.
+    may assume it.
 -   No stored AWS access key.
 
 ### Tests
 
 Verify:
 
--   Authorized project succeeds;.
--   Another project/claim combination fails;.
--   Role has only required AWS permissions;.
+-   Authorized project succeeds.
+-   Another project/claim combination fails.
+-   Role has only required AWS permissions.
 -   CloudTrail records `AssumeRoleWithWebIdentity`.
 
 ### Extension
@@ -718,10 +718,10 @@ Wait for/find the Access Analyzer finding.
 
 Record:
 
--   Resource;.
--   External principal;.
--   Granted actions;.
--   Finding status;.
+-   Resource.
+-   External principal.
+-   Granted actions.
+-   Finding status.
 -   Analyzer's zone of trust.
 
 Then remove the external access and verify the finding resolves.
@@ -743,9 +743,9 @@ workflow.
 
 Create several intentionally problematic policies:
 
--   Overly broad actions/resources;.
--   Malformed or invalid elements;.
--   Questionable condition usage;.
+-   Overly broad actions/resources.
+-   Malformed or invalid elements.
+-   Questionable condition usage.
 -   A clean least-privilege policy.
 
 Run:
@@ -870,11 +870,11 @@ In a disposable workload OU/account:
 
 Before changing anything, inspect:
 
--   Identity policy;.
--   Permissions boundary;.
--   Role session;.
--   Resource policy;.
--   SCPs inherited from root and parent OUs;.
+-   Identity policy.
+-   Permissions boundary.
+-   Role session.
+-   Resource policy.
+-   SCPs inherited from root and parent OUs.
 -   CloudTrail event.
 
 ### Required explanation
@@ -944,9 +944,9 @@ Then add the required permission to the boundary and retest.
 
 Be able to distinguish:
 
--   Explicit deny;.
--   Implicit deny;.
--   Permissions ceiling;.
+-   Explicit deny.
+-   Implicit deny.
+-   Permissions ceiling.
 -   Permissions grant.
 
 Do not describe a permissions boundary as a policy that simply "denies
@@ -1033,11 +1033,11 @@ Complete:
 
 For every failure:
 
--   Locate relevant STS/CloudTrail evidence;.
--   Record the principal ARN;.
--   Record role ARN;.
--   Record session name;.
--   Identify which policy layer you conclude blocked access;.
+-   Locate relevant STS/CloudTrail evidence.
+-   Record the principal ARN.
+-   Record role ARN.
+-   Record session name.
+-   Identify which policy layer you conclude blocked access.
 -   Explain what evidence supports that conclusion.
 
 ### Advanced extension --- Source identity
@@ -1130,20 +1130,20 @@ permissions until it works.
 
 You should be able to explain and demonstrate:
 
--   Cross-account trust versus permissions;.
--   STS temporary credentials;.
--   Role trust policies;.
+-   Cross-account trust versus permissions.
+-   STS temporary credentials.
+-   Role trust policies.
 -   `ExternalId` and the confused-deputy problem;
--   Permissions boundaries as privilege ceilings;.
+-   Permissions boundaries as privilege ceilings.
 -   Delegated IAM administration without unrestricted privilege
-    escalation;.
--   RBAC versus ABAC;.
--   Authorization-sensitive tag governance;.
--   Workforce identity versus workload identity;.
--   Native AWS roles versus OIDC federation;.
--   IAM Access Analyzer external-access reasoning;.
--   IAM policy validation;.
--   SCP, boundary, identity-policy, and trust-policy interactions;.
+    escalation.
+-   RBAC versus ABAC.
+-   Authorization-sensitive tag governance.
+-   Workforce identity versus workload identity.
+-   Native AWS roles versus OIDC federation.
+-   IAM Access Analyzer external-access reasoning.
+-   IAM policy validation.
+-   SCP, boundary, identity-policy, and trust-policy interactions.
 -   Systematic `AssumeRole` troubleshooting.
 
 The strongest portfolio outcome is not "I created IAM roles." It is:

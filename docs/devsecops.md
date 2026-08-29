@@ -6,11 +6,11 @@ This document describes the repository's local pre-commit controls, the Checkov 
 
 The controls provide early feedback before a change is committed. They complement, but do not replace:
 
-- Terraform formatting and validation;.
-- Terraform plan review;.
-- Peer review;.
-- Protected branches;.
-- CI security checks;.
+- Terraform formatting and validation.
+- Terraform plan review.
+- Peer review.
+- Protected branches.
+- CI security checks.
 - AWS runtime controls and monitoring.
 
 A developer can bypass a local hook with `git commit --no-verify`. CI must therefore run the same checks before a change can merge.
@@ -200,10 +200,10 @@ uv run --frozen checkov
 
 ensures that:
 
-- The Checkov version comes from `uv.lock`;.
-- Local and CI scans use the same dependency graph;.
-- Checkov is not installed into the operating system Python environment;.
-- An unreviewed dependency resolution cannot silently occur during CI;.
+- The Checkov version comes from `uv.lock`.
+- Local and CI scans use the same dependency graph.
+- Checkov is not installed into the operating system Python environment.
+- An unreviewed dependency resolution cannot silently occur during CI.
 - Developers do not need a separate global Checkov installation.
 
 ### Why `pass_filenames` is disabled
@@ -328,19 +328,19 @@ A suppression must be adjacent to the affected Terraform resource and include a 
 
 A suppression should identify:
 
-- Why the capability is required;.
-- Why AWS does not permit narrower enforcement, or why the rule is intentionally triggered;.
-- Resource and condition constraints already applied;.
-- Explicit denies or separation of duties;.
-- Monitoring and review controls;.
+- Why the capability is required.
+- Why AWS does not permit narrower enforcement, or why the rule is intentionally triggered.
+- Resource and condition constraints already applied.
+- Explicit denies or separation of duties.
+- Monitoring and review controls.
 - The relevant architecture or security document.
 
 Do not use:
 
-- Unexplained suppressions;.
-- Repository-wide suppression of IAM checks;.
-- Suppressions added only to make CI green;.
-- Broad skip lists without individual review;.
+- Unexplained suppressions.
+- Repository-wide suppression of IAM checks.
+- Suppressions added only to make CI green.
+- Broad skip lists without individual review.
 - Suppression of a real privilege-escalation path without mitigation.
 
 The permission-set administrator currently carries a narrow `CKV_AWS_289` suppression because permissions management is that persona's explicit responsibility. Before the suppression, the implementation scopes resources, prohibits account assignments, and protects administrative permission sets by tag. The remaining risk is documented in [`identity_center_security.md`](identity_center_security.md).
@@ -349,9 +349,9 @@ The permission-set administrator currently carries a narrow `CKV_AWS_289` suppre
 
 Checkov evaluates policy structure and may not know every AWS authorization nuance. For example:
 
-- Some list or browser-handshake actions do not support resource ARNs;.
-- Identity Store actions use a mixture of Identity Store, group, user, and membership resource types;.
-- IAM Identity Center account assignments authorize instance, permission-set, and account resources;.
+- Some list or browser-handshake actions do not support resource ARNs.
+- Identity Store actions use a mixture of Identity Store, group, user, and membership resource types.
+- IAM Identity Center account assignments authorize instance, permission-set, and account resources.
 - A role whose purpose is permission administration necessarily contains permissions-management actions.
 
 Do not immediately suppress a wildcard finding. Consult the AWS service authorization table and separate:
@@ -387,12 +387,12 @@ uv run --frozen pre-commit run --all-files --show-diff-on-failure
 
 The static-analysis job should:
 
-- Run without AWS credentials;.
-- Use the committed `uv.lock`;.
-- Fail when hooks fail;.
-- Pin any CI actions to reviewed immutable commit SHAs;.
-- Avoid uploading source or findings to external services unless approved;.
-- Protect workflow files and the default branch;.
+- Run without AWS credentials.
+- Use the committed `uv.lock`.
+- Fail when hooks fail.
+- Pin any CI actions to reviewed immutable commit SHAs.
+- Avoid uploading source or findings to external services unless approved.
+- Protect workflow files and the default branch.
 - Require review before changing Checkov suppressions or hook configuration.
 
 Local success is not sufficient because local hooks can be bypassed.
