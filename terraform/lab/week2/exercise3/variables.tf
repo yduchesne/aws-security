@@ -23,9 +23,6 @@ variable "common_tags" {
     Curriculum = "Core"
   }
 }
-variable "source_profile" {
-  type = string
-}
 variable "source_operator_role_arn" {
   type = string
 }
@@ -36,9 +33,5 @@ variable "external_id" {
 
 variable "target_account_id" {
   description = "Dev/Test lab target account ID used by the exercise context."
-  type        = string
-}
-variable "target_aws_profile" {
-  description = "IAM Identity Center-backed target account profile."
   type        = string
 }

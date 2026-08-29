@@ -171,12 +171,12 @@ The manually operated test users are intentionally outside Terraform membership 
 
 Mitigations include:
 
-- Assign the group only in the AFT management account;.
-- Keep the one-hour session and require strong MFA;.
-- Protect all four AFT repositories with branch protection and independent review;.
-- Restrict the GitHub App installation to the required repositories;.
-- Alert on CodeConnections installation changes and AFT pipeline executions;.
-- Do not grant IAM mutation, Identity Center administration, Organizations administration, or unrestricted `sts:AssumeRole`;.
+- Assign the group only in the AFT management account.
+- Keep the one-hour session and require strong MFA.
+- Protect all four AFT repositories with branch protection and independent review.
+- Restrict the GitHub App installation to the required repositories.
+- Alert on CodeConnections installation changes and AFT pipeline executions.
+- Do not grant IAM mutation, Identity Center administration, Organizations administration, or unrestricted `sts:AssumeRole`.
 - Periodically reconcile group membership and the account assignment with Terraform.
 
 The Account Factory user is a data source because this project must not create a duplicate or take ownership of an identity created or referenced by Control Tower. If lookup by `UserName` does not find exactly one user, deployment stops rather than guessing.
@@ -234,12 +234,12 @@ Change request
 
 The deployment role should:
 
-- Trust only the designated repository and protected environment;.
-- Use short-lived OIDC credentials;.
-- Reject self-assignment and unapproved principal/permission-set/account combinations;.
-- Apply an approved assignment catalog;.
-- Require stronger review for the management account;.
-- Be unable to change its own trust policy or permissions;.
+- Trust only the designated repository and protected environment.
+- Use short-lived OIDC credentials.
+- Reject self-assignment and unapproved principal/permission-set/account combinations.
+- Apply an approved assignment catalog.
+- Require stronger review for the management account.
+- Be unable to change its own trust policy or permissions.
 - Send audit events to a destination administrators cannot alter.
 
 At greater scale, an external identity provider with privileged identity management can add just-in-time membership, approval, expiration, access reviews, and phishing-resistant MFA. If users and groups become SCIM-managed, Terraform ownership of `aws_identitystore_user` and `aws_identitystore_group` must be reconsidered.
@@ -254,12 +254,12 @@ Initialize and review this root independently:
 
 Apply only after verifying:
 
-- The landing zone is `ACTIVE` and `IN_SYNC`;.
-- None of the proposed users, groups, or permission sets already exists;.
-- Each email belongs to the intended accountable human;.
-- The plan changes no Control Tower-created identity resource;.
-- Policies contain no unexpected wildcard actions;.
-- Account assignments target only the management account;.
+- The landing zone is `ACTIVE` and `IN_SYNC`.
+- None of the proposed users, groups, or permission sets already exists.
+- Each email belongs to the intended accountable human.
+- The plan changes no Control Tower-created identity resource.
+- Policies contain no unexpected wildcard actions.
+- Account assignments target only the management account.
 - The Terraform state backend meets sensitive-data requirements.
 
 After apply, test each persona through the AWS access portal, verify expected allowed and denied operations, register MFA, and retain redacted evidence.

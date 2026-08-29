@@ -194,9 +194,9 @@ Start login deliberately, especially on a workstation used by multiple
 people:
 
 ```bash
-aws sso login \\
-  --profile alice-dev \\
-  --use-device-code \\
+aws sso login \
+  --profile alice-dev \
+  --use-device-code \
   --no-browser
 ```
 
@@ -306,8 +306,8 @@ currently signed-in identity instead of prompting for the intended one.
 
 Typical symptoms include:
 
-- The CLI lists only permission sets belonging to another persona;.
-- An exercise profile receives the baseline administrator permission set;.
+- The CLI lists only permission sets belonging to another persona.
+- An exercise profile receives the baseline administrator permission set.
 - `get-caller-identity` reports an unexpected account or role;
 - MFA is not requested because the existing browser session is still valid.
 
@@ -328,8 +328,8 @@ aws sso login \
 
 The CLI displays:
 
-- An AWS verification URL;.
-- A short-lived device authorization code;.
+- An AWS verification URL.
+- A short-lived device authorization code.
 - A message indicating that it is waiting for authorization.
 
 The operator opens the URL, enters the code, authenticates, completes MFA, and
@@ -357,20 +357,20 @@ session for the wrong user.
 `--no-browser` prevents the CLI from launching a browser automatically. This
 allows the operator to deliberately:
 
-- Copy the verification URL printed by the CLI;.
-- Choose a private or incognito window;.
-- Choose a dedicated browser profile;.
-- Use a different browser for each test identity;.
+- Copy the verification URL printed by the CLI.
+- Choose a private or incognito window.
+- Choose a dedicated browser profile.
+- Use a different browser for each test identity.
 - Inspect which user is signing in before approving access.
 
 It addresses accidental reuse of the default browser's authenticated session.
 It does **not**:
 
-- Clear existing AWS CLI tokens;.
-- Clear browser cookies;.
-- Force Identity Center to request MFA;.
-- Bind a profile to a particular user;.
-- Change the permissions granted by an account assignment;.
+- Clear existing AWS CLI tokens.
+- Clear browser cookies.
+- Force Identity Center to request MFA.
+- Bind a profile to a particular user.
+- Change the permissions granted by an account assignment.
 - Prevent the operator from manually opening the URL in the wrong browser.
 
 The operator must still clear stale state and verify the resulting AWS
@@ -523,11 +523,11 @@ If the wrong role or user appears:
 If the correct user sees no expected role, inspect IAM Identity Center rather
 than repeatedly reconfiguring the CLI. Verify:
 
-- User activation and MFA registration;.
-- Group membership;.
-- Account assignment;.
-- Permission-set provisioning status;.
-- The account selected by the profile;.
+- User activation and MFA registration.
+- Group membership.
+- Account assignment.
+- Permission-set provisioning status.
+- The account selected by the profile.
 - Whether an existing browser session authorized a different identity.
 
 Never add permissions merely to work around an unexplained SSO identity

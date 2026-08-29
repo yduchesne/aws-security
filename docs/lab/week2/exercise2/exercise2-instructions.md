@@ -8,6 +8,37 @@ disposable: it uses only the two workload lab accounts and a separate
 Terraform state key. Complete the shared setup before beginning, including the
 persistent `WorkloadLabRoleBoundary` in both accounts.
 
+## Table of contents
+
+- [Introduction](#introduction).
+- [Learning objectives](#learning-objectives).
+- [Resources and ownership boundary](#resources-and-ownership-boundary).
+- [Configure inputs](#configure-inputs).
+- [Authenticate and verify both accounts](#authenticate-and-verify-both-accounts).
+- [Initialize, validate, and inspect the Terraform root](#initialize-validate-and-inspect-the-terraform-root).
+- [Policy, resource, and boundary excerpts](#policy-resource-and-boundary-excerpts).
+  - [Source-role trust policy](#source-role-trust-policy).
+  - [Source-role identity policy](#source-role-identity-policy).
+  - [Target trust policy — phase 1](#target-trust-policy---phase-1).
+  - [Target trust policy — phase 2](#target-trust-policy---phase-2).
+  - [Permissions-boundary attachment](#permissions-boundary-attachment).
+  - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
+- [Phase 1 — Account-level trust](#phase-1---account-level-trust).
+  - [Phase 1 tests](#phase-1-tests).
+- [Phase 2 — Explicit role trust hardening](#phase-2---explicit-role-trust-hardening).
+  - [Phase 2 tests](#phase-2-tests).
+- [Authorization decision matrix](#authorization-decision-matrix).
+- [Inspect CloudTrail evidence](#inspect-cloudtrail-evidence).
+- [Investigating in the Console](#investigating-in-the-console).
+  - [Inspect IAM Identity Center access](#inspect-iam-identity-center-access).
+  - [Inspect the source-account roles](#inspect-the-source-account-roles).
+  - [Inspect the target role after each phase](#inspect-the-target-role-after-each-phase).
+  - [Inspect the permissions boundary](#inspect-the-permissions-boundary).
+  - [Inspect CloudTrail and SCP context](#inspect-cloudtrail-and-scp-context).
+- [Security analysis and production hardening](#security-analysis-and-production-hardening).
+- [Clean up](#clean-up).
+- [References](#references).
+
 ## Introduction
 
 A cross-account role trust policy can name either a specific principal or the
@@ -43,29 +74,40 @@ Permissions boundaries and SCPs do not block the request
 Successful cross-account role assumption
 ```
 
-The two phases can be visualized as follows:
+The two role-assumption hops and their corresponding CLI profiles can be
+visualized as follows:
 
 ```mermaid
 flowchart LR
-    User[WorkloadLabAdministrator session] --> Approved[ApprovedAutomationRole]
-    User --> Unapproved[UnapprovedRole]
-    Approved -->|sts:AssumeRole allowed| STS[STS]
-    Unapproved -->|sts:AssumeRole allowed| STS
-    STS --> Target[TrustHardeningTargetRole]
-    Target --> Result[Temporary target-account session]
+    SSO[week2-source<br/>Identity Center session] --> AC[week2-ex2-approved-account<br/>ApprovedAutomationRole]
+    SSO --> UC[week2-ex2-unapproved-account<br/>UnapprovedRole]
+    AC -->|source_profile| AT[week2-ex2-approved-target]
+    UC -->|source_profile| UT[week2-ex2-unapproved-target]
+    AT -->|AssumeRole| Target[TrustHardeningTargetRole<br/>Test Lab/target]
+    UT -->|AssumeRole| Target
 ```
 
-In phase 1, the target trust accepts the source account root, so both source
-roles can reach the target. In phase 2, the trust edge from `UnapprovedRole`
-is removed:
+The `*-account` profiles test the first hop only. Their caller identity is the
+source-account role. The `*-target` profiles add a second `source_profile`, so
+the AWS CLI first obtains the source role session and then uses that temporary
+session to request `TrustHardeningTargetRole` in the target account. Therefore,
+only the `*-target` profiles can show `TrustHardeningTargetRole` in their
+successful `get-caller-identity` response.
+
+In phase 1, the target trust accepts the source account root, so both target
+profiles can complete the second hop. In phase 2, the trust edge from
+`UnapprovedRole` is removed:
 
 ```mermaid
 flowchart LR
-    Approved[ApprovedAutomationRole] -->|identity Allow + trusted| Target[TrustHardeningTargetRole]
-    Unapproved[UnapprovedRole] -.->|identity Allow, target trust mismatch| Target
-    Target --> Session[Target-account role session]
+    Approved[ApprovedAutomationRole] -->|identity Allow| Target[TrustHardeningTargetRole]
+    Target -->|trust accepts approved role| AT[Approved target session]
+    Unapproved[UnapprovedRole] -->|identity Allow| Target
+    Target -.->|trust rejects unapproved role| UT[Denied target session]
 ```
 
+The source-side permissions are deliberately unchanged between phases. The
+change in the final result is caused by the target role's trust policy.
 You will learn to distinguish **account-level delegation** from **explicit
 principal trust**, inspect both sides of the authorization decision, and make a
 small hardening change without changing the source roles or their permissions.
@@ -76,14 +118,14 @@ exercise.
 
 By the end of the exercise, you should be able to:
 
-- Explain why a source identity Allow and a target trust Allow are both needed;.
+- Explain why a source identity Allow and a target trust Allow are both needed.
 - Distinguish an account-root principal in a trust policy from a specific role
-  principal;.
+  principal.
 - Demonstrate that two roles in a trusted account can both use account-level
-  delegation when their identity policies allow it;.
-- Harden the target trust policy to one explicit role ARN;.
+  delegation when their identity policies allow it.
+- Harden the target trust policy to one explicit role ARN.
 - Identify an implicit cross-account denial without adding permissions
-  speculatively;.
+  speculatively.
 - Explain why a permissions boundary limits a role but does not grant
   `sts:AssumeRole`; and.
 - Use CloudTrail to attribute successful and failed `AssumeRole` requests.
@@ -100,8 +142,8 @@ Terraform creates the following disposable resources:
 
 Both source roles:
 
-- Trust the exact Identity Center-provisioned `WorkloadLabAdministrator` role;.
-- Have a one-hour maximum session duration;.
+- Trust the exact Identity Center-provisioned `WorkloadLabAdministrator` role.
+- Have a one-hour maximum session duration.
 - Use the pre-existing `WorkloadLabRoleBoundary`; and.
 - Allow `sts:AssumeRole` only on the target role ARN.
 
@@ -121,8 +163,7 @@ environment file:
 
 ```bash
 source "${TF_ENV_FILE:-$HOME/.env/aws-security/terraform/.env}"
-cp terraform/lab/week2/exercise2/.env.example \\
-  terraform/lab/week2/exercise2/.env
+cp terraform/lab/week2/exercise2/.env.example terraform/lab/week2/exercise2/.env
 ```
 
 Replace all placeholders in `.env`, then source it:
@@ -133,12 +174,20 @@ source terraform/lab/week2/exercise2/.env
 
 The required values are:
 
-- The Dev Lab/source and Test Lab/target account IDs;.
+- The Dev Lab/source and Test Lab/target account IDs.
 - `week2-source` and `week2-target`, or equivalent Identity Center-backed
   profiles;
 - The exact IAM ARN of the source account's provisioned
   `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>` role; and.
 - `TF_VAR_trust_mode=account` for the first phase.
+
+The source operator ARN is derived from the AWS CLI configuration created for
+the `week2-source` and `week2-target` profiles in Exercise 1. Before continuing,
+review [Create the AWS CLI profiles](../exercise1/exercise1-instructions.md#create-the-aws-cli-profiles)
+and [Configure the provisioned IAM role ARN](../exercise1/exercise1-instructions.md#configure-the-provisioned-iam-role-arn)
+in the Exercise 1 instructions. Those sections explain the profile purpose,
+Identity Center role-session verification, and conversion from the temporary
+STS session ARN to the underlying IAM role ARN.
 
 The source operator ARN must be an IAM role ARN, not an STS session ARN and
 not an IAM Identity Center permission-set ARN. Obtain the role name from the
@@ -200,16 +249,15 @@ configuration to the wrong accounts.
 Initialize this root with its independent remote state key:
 
 ```bash
-terraform -chdir=terraform/lab/week2/exercise2 init \\
-  -backend-config="bucket=$TF_STATE_BUCKET" \\
-  -backend-config="region=$TF_STATE_REGION" \\
-  -backend-config="profile=${TF_STATE_PROFILE:-ct-bootstrap}"
+terraform -chdir=terraform/lab/week2/exercise2 init \
+  -backend-config="bucket=$TF_STATE_BUCKET" \
+  -backend-config="region=$TF_STATE_REGION" \
+  -backend-config="profile=$TF_STATE_PROFILE"
 ```
 
 Then format and validate before planning:
 
 ```bash
-terraform -chdir=terraform/lab/week2/exercise2 fmt -check
 terraform -chdir=terraform/lab/week2/exercise2 validate
 ```
 
@@ -331,6 +379,73 @@ boundary is a maximum-permissions ceiling; it does not itself grant
 applicable SCP or explicit deny can still block the request. The boundary is
 owned by `terraform/lab/week2/baseline`, not this exercise state.
 
+### Permissions-boundary excerpt
+
+The authoritative boundary declaration is
+[`workload-lab-role-boundary.json.tftpl`](../../../../terraform/lab/week2/baseline/policies/workload-lab-role-boundary.json.tftpl).
+The following excerpt is taken from the original policy JSON template; its
+`${partition}`, `${dev_lab_account_id}`, `${test_lab_account_id}`, and
+`${lab_bucket_name_prefix}` values are rendered by the baseline Terraform root:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAssumingBoundedWeekTwoRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:${partition}:iam::${dev_lab_account_id}:role/week2/*",
+        "arn:${partition}:iam::${test_lab_account_id}:role/week2/*"
+      ]
+    },
+    {
+      "Sid": "AllowReadCurrentIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowWeekTwoLabBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:${partition}:s3:::${lab_bucket_name_prefix}*",
+        "arn:${partition}:s3:::${lab_bucket_name_prefix}*/*"
+      ]
+    }
+  ]
+}
+```
+
+This is a permissions boundary, so it defines a maximum-permissions ceiling;
+it does not grant these actions by itself. An identity policy must also allow
+an operation, and applicable SCPs, session policies, resource policies, trust
+policies, and explicit denies remain additional constraints. The policy is
+owned by the baseline Terraform root. Do not edit, import, replace, or destroy
+it from this exercise.
+
+#### Boundary analysis
+
+This boundary is associated with bounded exercise roles in the allowlisted lab
+accounts. It permits only the listed Week 2 role-assumption, identity-
+verification, and lab-bucket operations. It does not grant permissions by
+itself; each operation also requires an identity-policy Allow. Its weak point is
+that any attached role policy can use every action the boundary permits, so the
+boundary and the policies on bounded roles must both be protected. The
+baseline Terraform root owns this policy and Exercise 2 must treat it as
+read-only.
+
 ## Phase 1 — Account-level trust
 
 Set or retain:
@@ -366,10 +481,10 @@ terraform -chdir=terraform/lab/week2/exercise2 apply
 Record the role ARNs without display quotes:
 
 ```bash
-APPROVED_ROLE_ARN=$(terraform -chdir=terraform/lab/week2/exercise2 output -raw approved_role_arn)
-UNAPPROVED_ROLE_ARN=$(terraform -chdir=terraform/lab/week2/exercise2 output -raw unapproved_role_arn)
-TARGET_ROLE_ARN=$(terraform -chdir=terraform/lab/week2/exercise2 output -raw target_role_arn)
-printf '%s\n%s\n%s\n' "$APPROVED_ROLE_ARN" "$UNAPPROVED_ROLE_ARN" "$TARGET_ROLE_ARN"
+export EXERCISE_ROOT="terraform/lab/week2/exercise2"
+echo "approved_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw approved_role_arn)"
+echo "unapproved_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw unapproved_role_arn)"
+echo "target_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw target_role_arn)"
 ```
 
 Configure temporary AWS CLI role profiles in `~/.aws/config` using the
@@ -387,27 +502,53 @@ source_profile = week2-source
 role_arn = <unapproved_role_arn>
 role_session_name = week2-ex2-unapproved-account
 region = us-east-2
+
+[profile week2-ex2-approved-target]
+source_profile = week2-ex2-approved-account
+role_arn = <target_role_arn>
+role_session_name = week2-ex2-approved-target
+region = us-east-2
+
+[profile week2-ex2-unapproved-target]
+source_profile = week2-ex2-unapproved-account
+role_arn = <target_role_arn>
+role_session_name = week2-ex2-unapproved-target
+region = us-east-2
 ```
 
 These entries contain role metadata only. The AWS CLI obtains temporary
-credentials from the Identity Center source profile at runtime.
+credentials from the Identity Center source profile at runtime. The
+`source_profile` relationship is the role chain: a target profile first
+obtains credentials for its source profile, then uses those credentials for the
+second `AssumeRole` request. The chain is evaluated at command execution time;
+no intermediate credentials are copied into the configuration.
 
 ### Phase 1 tests
 
-Run:
+First verify the two source-role profiles:
 
 ```bash
 aws sts get-caller-identity --profile week2-ex2-approved-account
 aws sts get-caller-identity --profile week2-ex2-unapproved-account
 ```
 
-**Expected result: Allow for both.** The initial SSO session may assume either
-source role because both source-role trust policies name the exact operator
-role. Each source role may then request the target role because its identity
-policy names the exact target ARN. The target trust policy accepts the source
-account root, so AWS permits delegation by either source role. The returned
-identity for each final profile must be an assumed
-`TrustHardeningTargetRole` session in the Test Lab account.
+These commands should return `ApprovedAutomationRole` and `UnapprovedRole`,
+respectively, in the Dev Lab/source account. They verify the first hop only.
+
+Now verify the two chained target profiles:
+
+```bash
+aws sts get-caller-identity --profile week2-ex2-approved-target
+aws sts get-caller-identity --profile week2-ex2-unapproved-target
+```
+
+**Expected result: Allow for both target profiles.** The initial SSO session may
+assume either source role because both source-role trust policies name the exact
+operator role. Each source role may then request the target role because its
+identity policy names the exact target ARN. The phase-1 target trust policy
+accepts the source account root, so AWS permits delegation by either source
+role. The successful responses must identify an assumed
+`TrustHardeningTargetRole` session in the Test Lab/target account.
 
 This result does not mean that the target role trusts every principal in the
 world. The trust is limited to principals from one account, and those
@@ -459,11 +600,30 @@ terraform -chdir=terraform/lab/week2/exercise2 apply
 
 ### Phase 2 tests
 
-Run the same profiles again:
+The source-role profiles should still return the same source-account roles:
 
 ```bash
 aws sts get-caller-identity --profile week2-ex2-approved-account
 aws sts get-caller-identity --profile week2-ex2-unapproved-account
+```
+
+Before testing the final hop again, change the role session names. This
+forces the AWS CLI to request fresh temporary credentials instead of reusing a
+phase-1 cached target-role session. Changing the trust policy does not revoke
+an already-issued STS session.
+
+```bash
+aws configure set role_session_name week2-ex2-approved-target-phase2 \
+  --profile week2-ex2-approved-target
+aws configure set role_session_name week2-ex2-unapproved-target-phase2 \
+  --profile week2-ex2-unapproved-target
+```
+
+Test the final hop with the chained profiles:
+
+```bash
+aws sts get-caller-identity --profile week2-ex2-approved-target
+aws sts get-caller-identity --profile week2-ex2-unapproved-target
 ```
 
 **Approved role — Expected: Allow.** The source identity policy still allows
@@ -509,16 +669,16 @@ Use the target-account operator profile to search for STS events in the home
 Region:
 
 ```bash
-aws cloudtrail lookup-events \\
-  --profile week2-target \\
-  --region us-east-2 \\
+aws cloudtrail lookup-events \
+  --profile week2-target \
+  --region us-east-2 \
   --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole
 ```
 
 For each phase and caller, preserve redacted evidence containing:
 
-- Event time and event ID;.
-- The calling principal and its account;.
+- Event time and event ID.
+- The calling principal and its account.
 - `requestParameters.roleArn`;
 - `requestParameters.roleSessionName`;
 - Source IP address where appropriate; and.
@@ -559,8 +719,8 @@ role or its permission set from this exercise.
 In the Dev Lab account, open **IAM → Roles** and search under the
 `/week2/exercise2/` path. For both roles verify:
 
-- **Trust relationships** contain only `TF_VAR_source_operator_role_arn`;.
-- The inline policy grants `sts:AssumeRole` only on the target role ARN;.
+- **Trust relationships** contain only `TF_VAR_source_operator_role_arn`.
+- The inline policy grants `sts:AssumeRole` only on the target role ARN.
 - `WorkloadLabRoleBoundary` is attached; and
 - The maximum session duration is one hour.
 
@@ -574,7 +734,7 @@ In the Test Lab account, open `TrustHardeningTargetRole` under
 `/week2/exercise2/` and inspect **Trust relationships**:
 
 - After phase 1, the trusted principal is
-  `arn:aws:iam::<SOURCE_ACCOUNT_ID>:root`;.
+  `arn:aws:iam::<SOURCE_ACCOUNT_ID>:root`.
 - After phase 2, the trusted principal is only
   `ApprovedAutomationRole`; and.
 - Neither phase trusts `*`, the whole organization, or an unrelated account.
@@ -608,14 +768,14 @@ or another explicit deny.
 
 The role-level inspection above should also confirm:
 
-- The exact operator role in each trust policy;.
+- The exact operator role in each trust policy.
 - Confirm that both inline policies allow only `sts:AssumeRole` on the target
   role ARN; and.
 - Confirm that `WorkloadLabRoleBoundary` is attached.
 
 In the Test Lab account inspect `TrustHardeningTargetRole` after each phase:
 
-- Phase 1 must show the source account root as the trusted principal;.
+- Phase 1 must show the source account root as the trusted principal.
 - Phase 2 must show only `ApprovedAutomationRole`; and.
 - Neither phase should trust the entire organization, `*`, or the unapproved
   role explicitly.
@@ -648,12 +808,12 @@ policy, identity policies, permissions boundary, and administrative path.
 
 In production:
 
-- Prefer exact role principals where the delegation set is known;.
+- Prefer exact role principals where the delegation set is known.
 - Use paths and naming conventions as organization aids, not as the sole
-  security control;.
-- Require a mandatory permissions boundary for delegated role creation;.
-- Monitor `AssumeRole`, role-policy, trust-policy, and boundary changes;.
-- Review inherited SCPs and target resource policies;.
+  security control.
+- Require a mandatory permissions boundary for delegated role creation.
+- Monitor `AssumeRole`, role-policy, trust-policy, and boundary changes.
+- Review inherited SCPs and target resource policies.
 - Separate source-account role administration from target-account trust
   administration where practical; and.
 - Use short-lived federated human access and workload roles rather than IAM
@@ -679,8 +839,8 @@ The destroy plan must contain only the Exercise 2 roles and their inline
 policies. It must not destroy or modify:
 
 - `/week2/WorkloadLabRoleBoundary`;
-- The Identity Center-provisioned `AWSReservedSSO_*` role;.
-- Test users or their temporary group membership;.
+- The Identity Center-provisioned `AWSReservedSSO_*` role.
+- Test users or their temporary group membership.
 - Exercise 1 resources; or.
 - Control Tower or Organizations resources.
 

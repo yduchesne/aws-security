@@ -28,15 +28,15 @@ Successful cross-account access
 You will observe that:
 
 - IAM Identity Center provides short-lived credentials for the initial human
-  sessions;.
+  sessions.
 - A source-account role can call `sts:AssumeRole` only for an explicitly named
-  target role;.
+  target role.
 - The target role trusts one approved source role rather than the entire source
-  account;.
-- The assumed target role can read only a selected S3 resource;.
-- Write access and unrelated-resource access remain implicitly denied;.
+  account.
+- The assumed target role can read only a selected S3 resource.
+- Write access and unrelated-resource access remain implicitly denied.
 - An identity-side `sts:AssumeRole` allow is insufficient when the target trust
-  policy excludes the caller;.
+  policy excludes the caller.
 - CloudTrail records the principals and role sessions involved in the chain.
 
 ### High-level tasks
@@ -106,8 +106,7 @@ terraform/lab/week2/exercise1
 Create its local environment file:
 
 ```bash
-cp terraform/lab/week2/exercise1/.env.example \
-  terraform/lab/week2/exercise1/.env
+cp terraform/lab/week2/exercise1/.env.example terraform/lab/week2/exercise1/.env
 ```
 
 Replace every placeholder in the copied file. Configure:
@@ -301,9 +300,9 @@ After Terraform has been applied, obtain the required role ARNs:
 
 ```bash
 export EXERCISE_ROOT="terraform/lab/week2/exercise1"
-echo "approved_caller_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw approved_caller_role_arn)"
-echo "untrusted_caller_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw untrusted_caller_role_arn)"
-echo "target_read_role_arn: $(terraform -chdir="$EXERCISE_ROOT" output -raw target_read_role_arn)"
+echo "approved_caller_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw approved_caller_role_arn)"
+echo "untrusted_caller_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw untrusted_caller_role_arn)"
+echo "target_read_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw target_read_role_arn)"
 ```
 
 Append the following profiles to `~/.aws/config`, replacing the placeholders
@@ -688,12 +687,12 @@ this exercise.
 
 These permissions prevent common provider-time `AccessDenied` failures:
 
-- Terraform can create roles only when the approved boundary is supplied;.
+- Terraform can create roles only when the approved boundary is supplied.
 - Role-policy, trust-policy, tag, and read-back APIs allow Terraform to
-  reconcile role state;.
+  reconcile role state.
 - `iam:GetPolicyVersion` lets Terraform inspect the pre-existing boundary;
 - S3 create, configuration, read-back, object, and cleanup APIs support the two
-  disposable buckets;.
+  disposable buckets.
 - `sts:AssumeRole` enables the later approved and intentionally untrusted role
   chains;
 - `cloudtrail:LookupEvents` supports evidence collection.
@@ -939,7 +938,7 @@ aliased exercise providers:
 terraform -chdir=terraform/lab/week2/exercise1 init \
   -backend-config="bucket=$TF_STATE_BUCKET" \
   -backend-config="region=$TF_STATE_REGION" \
-  -backend-config="profile=${TF_STATE_PROFILE:-ct-bootstrap}"
+  -backend-config="profile=$TF_STATE_PROFILE"
 ```
 
 Validate the root:
@@ -958,9 +957,9 @@ Terraform manages:
 
 - `CrossAccountCallerRole` under `/week2/exercise1/`;
 - `UntrustedCrossAccountCallerRole` under `/week2/exercise1/`;
-- A permissions boundary on both roles;.
+- A permissions boundary on both roles.
 - A trust policy on both roles allowing the exact
-  `TF_VAR_source_operator_role_arn` principal;.
+  `TF_VAR_source_operator_role_arn` principal.
 - An inline policy on each role allowing `sts:AssumeRole` only for
   `CrossAccountReadRole` in the target account.
 
@@ -973,13 +972,13 @@ must come from the target trust policy, not from a missing source policy.
 Terraform manages:
 
 - `CrossAccountReadRole` under `/week2/exercise1/`;
-- Its required `WorkloadLabRoleBoundary` attachment;.
+- Its required `WorkloadLabRoleBoundary` attachment.
 - A trust policy permitting only `CrossAccountCallerRole` from the source
-  account;.
+  account.
 - An inline policy allowing `s3:ListBucket` and `s3:GetBucketLocation` on the
-  approved bucket and `s3:GetObject` on one approved object;.
-- An approved S3 bucket and object;.
-- An unrelated S3 bucket and object for a negative resource-scope test;.
+  approved bucket and `s3:GetObject` on one approved object.
+- An approved S3 bucket and object.
+- An unrelated S3 bucket and object for a negative resource-scope test.
 - Public-access blocks, bucket-owner-enforced ownership, SSE-S3 encryption,
   versioning, and seven-day lifecycle cleanup on both buckets.
 
@@ -1024,7 +1023,9 @@ Record the raw output ARNs when configuring profiles; raw output avoids copying
 Terraform display quotation marks:
 
 ```bash
-terraform -chdir=terraform/lab/week2/exercise1 output
+echo "approved_caller_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw approved_caller_role_arn)"
+echo "untrusted_caller_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw untrusted_caller_role_arn)"
+echo "target_read_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw target_read_role_arn)"
 ```
 
 ## Configure role chaining for tests
@@ -1072,17 +1073,10 @@ assumption requires both sides, the final hop must fail.
 Read the Terraform outputs without display quotes:
 
 ```bash
-EXERCISE_ROOT="terraform/lab/week2/exercise1"
-
-APPROVED_CALLER_ROLE_ARN="$(
-  terraform -chdir="$EXERCISE_ROOT" output -raw approved_caller_role_arn
-)"
-UNTRUSTED_CALLER_ROLE_ARN="$(
-  terraform -chdir="$EXERCISE_ROOT" output -raw untrusted_caller_role_arn
-)"
-TARGET_READ_ROLE_ARN="$(
-  terraform -chdir="$EXERCISE_ROOT" output -raw target_read_role_arn
-)"
+export EXERCISE_ROOT="terraform/lab/week2/exercise1"
+echo "approved_caller_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw approved_caller_role_arn)"
+echo "untrusted_caller_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw untrusted_caller_role_arn)"
+echo "target_read_role_arn: $(terraform -chdir=$EXERCISE_ROOT output -raw target_read_role_arn)"
 ```
 
 Configure these profiles in `~/.aws/config` without quotation marks around the
@@ -1243,11 +1237,11 @@ aws cloudtrail lookup-events \
 
 For each approved and denied attempt, record:
 
-- Calling principal ARN;.
-- Requested target role ARN;.
-- Session name;.
-- Source IP and event time;.
-- Resulting assumed-role ARN for successful requests;.
+- Calling principal ARN.
+- Requested target role ARN.
+- Session name.
+- Source IP and event time.
+- Resulting assumed-role ARN for successful requests.
 - The policy layer inferred to have allowed or blocked the request.
 
 Consult the centralized organization trail if the event is not present in
@@ -1384,10 +1378,10 @@ WorkloadLabRoleBoundary
 
 Inspect:
 
-- The policy path `/week2/`;.
-- The current default policy version;.
-- The permitted STS role path and the two lab account IDs;.
-- The permitted S3 lab bucket-name prefix;.
+- The policy path `/week2/`.
+- The current default policy version.
+- The permitted STS role path and the two lab account IDs.
+- The permitted S3 lab bucket-name prefix.
 - The roles using the policy as a permissions boundary.
 
 The boundary establishes maximum permissions for exercise-created roles. An
@@ -1405,7 +1399,9 @@ In the Test Lab/target account, open **Amazon S3 → General purpose buckets** a
 locate the bucket names returned by:
 
 ```bash
-terraform -chdir=terraform/lab/week2/exercise1 output
+echo "approved_caller_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw approved_caller_role_arn)"
+echo "untrusted_caller_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw untrusted_caller_role_arn)"
+echo "target_read_role_arn: $(terraform -chdir=terraform/lab/week2/exercise1 output -raw target_read_role_arn)"
 ```
 
 Inspect the approved bucket:
@@ -1454,9 +1450,9 @@ is another reason not to run the exercise there.
 
 In each lab account, open **CloudTrail → Event history** and filter for:
 
-- **Event source:** `sts.amazonaws.com`;.
-- **Event name:** `AssumeRole`;.
-- The approved and untrusted caller role names;.
+- **Event source:** `sts.amazonaws.com`.
+- **Event name:** `AssumeRole`.
+- The approved and untrusted caller role names.
 - The target role name.
 
 For successful assumptions, expand the event and inspect
