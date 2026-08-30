@@ -60,6 +60,7 @@ this repository, especially for AWS security labs and technical exercises.
 - Do not include passwords, access keys, MFA secrets, tokens, or other credentials in command examples.
 - Validate generated command blocks syntactically when practical and search for accidental duplicate continuation characters before finalizing documentation.
 - Do not include redundant Terraform formatting commands in exercise execution instructions when formatting is already handled by the repository workflow; omit standalone `terraform ... fmt` and `terraform ... fmt -check` commands from those procedural snippets.
+- Do not add `exit 1` in command snippets that are meant to be executed in the terminal: those will make the terminal exit and prove inconvenient to the user.
 
 Example of valid multiline Bash:
 
@@ -93,6 +94,11 @@ Include excerpts for important:
 - Resource policies.
 - Permissions boundaries.
 - Terraform resource definitions.
+
+Also Provide excerpts for the policies created for the exercise
+
+- Include excerpts for the policies that were created for the exercise.
+- Do not restrict the excerpts to only the scopes beyond the exercise (such as the week's baseline).
 
 Explain what each policy answers:
 
