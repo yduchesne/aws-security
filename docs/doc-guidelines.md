@@ -151,6 +151,11 @@ Understand the scenario
 
 ### Happy- and unhappy-path tests
 
+Notes on terminology:
+
+- The happy-path tests are also dubbed as positive tests.
+- The unhappy-path tests are also known as negative tests.
+
 Every exercise must provide executable tests for both positive and negative
 outcomes. An exercise is not complete unless it includes both:
 
