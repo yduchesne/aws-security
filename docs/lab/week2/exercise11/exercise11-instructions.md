@@ -88,7 +88,36 @@ wildcarded safely and is not a Terraform input.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The exercise role's trust policy is declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise11/main.tf):
+
+```hcl
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Effect    = "Allow"
+    Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
+    Action    = "sts:AssumeRole"
+    Condition = {
+      ArnLike = {
+        "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+      }
+    }
+  }]
+})
+```
+
+The `${data.aws_partition.current.partition}` and `${var.source_account_id}`
+interpolations render to the AWS partition and the Dev Lab account ID. The
+`local.source_operator_role_arn_pattern` local renders to
+`arn:<partition>:iam::<Dev-Lab-account-id>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_WorkloadLabAdministrator_*`
+(`us-east-1` omits the Region suffix in the Identity Center role path). The
+excerpt keeps the original interpolation expressions rather than resolved
+example values.
+
+The identity policy created for the exercise is the inline
+`Exercise11Policy`, also declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise11/main.tf):
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -105,15 +134,114 @@ resource "aws_iam_role_policy" "exercise" {
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise11/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
-policy is not a substitute for an identity Allow.
+The four policy fixtures created for this exercise are committed files under
+[`terraform/lab/week2/exercise11/policies/`](../../../../terraform/lab/week2/exercise11/policies/).
+They are unattached policy documents supplied to `access-analyzer:ValidatePolicy`;
+none of them is deployed as an IAM policy. Each file is small, so it is
+reproduced in full.
+
+[`overly-broad.json`](../../../../terraform/lab/week2/exercise11/policies/overly-broad.json) —
+wildcard action on all resources:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+[`malformed.json`](../../../../terraform/lab/week2/exercise11/policies/malformed.json) —
+lowercase `Effect` and an unsupported top-level element:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "allow",
+      "Action": "s3:*",
+      "Resource": "arn:aws:s3:::aws-security-week2-lab-*"
+    }
+  ],
+  "MisspelledElement": "value"
+}
+```
+
+[`questionable-condition.json`](../../../../terraform/lab/week2/exercise11/policies/questionable-condition.json) —
+allow condition permitting non-HTTPS transport:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::aws-security-week2-lab-*/*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+[`least-privilege.json`](../../../../terraform/lab/week2/exercise11/policies/least-privilege.json) —
+narrow S3 actions and resources restricted to HTTPS:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-security-week2-lab-*",
+        "arn:aws:s3:::aws-security-week2-lab-*/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
+      }
+    }
+  ]
+}
+```
+
+A permissions boundary is a maximum, not a grant; a resource policy or trust
+policy is not a substitute for an identity Allow. None of the four fixtures
+is attached to `Week2Exercise11Role` or any other identity.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
+The trust-policy excerpt defines who may assume the disposable exercise
+role: only principals in the Dev Lab account whose ARN matches the
+`AWSReservedSSO_WorkloadLabAdministrator_*` Identity Center role pattern,
+evaluated through the `ArnLike` condition on `aws:PrincipalArn`. The
+authorized action is `sts:AssumeRole`. It intentionally excludes the Test
+Lab account, human IAM users, and every other Dev Lab role; the wildcard is
+confined to the Identity Center-generated role-name suffix, which is not a
+Terraform input. The account-root principal plus the `aws:PrincipalArn`
+condition is deliberately specific; without the condition the trust would
+cover every principal in the Dev Lab account, so the condition is the
+control that keeps the trust narrow. The role's inline policy and boundary
+remain the constraints on the resulting session.
+
+The identity-policy excerpt is the policy associated with the exercise role.
+Its principal is the role itself, and its only Allow is the harmless
 `sts:GetCallerIdentity` action on all resources. It is intended to permit
 identity verification, not access to arbitrary workload resources. It does not
 trust any principal; trust is defined separately by the role's assume-role
@@ -122,6 +250,21 @@ for other actions produces an implicit deny. The wildcard resource is a weak
 point for readability, although this identity-verification action does not
 provide a narrower resource scope. Always compare this excerpt with the role
 trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise11/main.tf).
+
+The four fixture excerpts are the policies created for the exercise and are
+the subject of every validation test. `overly-broad.json` grants
+`Action: "*"` on `Resource: "*"` and should produce security warnings for
+wildcard access. `malformed.json` uses a lowercase `Effect` and an
+unsupported `MisspelledElement` and should be rejected as invalid or produce
+error findings. `questionable-condition.json` allows `s3:GetObject` only
+when `aws:SecureTransport` is `false`, deliberately permitting non-HTTPS
+access, and should produce a security warning. `least-privilege.json` allows
+narrow S3 read actions on the lab bucket pattern only over HTTPS and should
+produce no findings. Because none of these documents is attached to an
+identity, none of them grants any permission: `ValidatePolicy` performs a
+static semantic and best-practice analysis, not a runtime authorization
+decision. A clean validation of `least-privilege.json` is not an Allow, and
+the findings on the other three documents are not denials of a live request.
 
 ### Permissions-boundary excerpt
 
@@ -556,17 +699,15 @@ Authenticated caller and ValidatePolicy permission
 ```
 
 The threat demonstrated is promotion of an overbroad, malformed, or insecure
-policy into an identity policy before review. A CI quality gate such as
-[`scripts/validate-iam-policies.sh`](../../../../scripts/validate-iam-policies.sh)
-can reject unexpected `ERROR` and `SECURITY_WARNING` findings, but its
-allowlist for intentionally bad teaching fixtures must not become a production
-exception. Residual risk remains because validation is not complete runtime
-authorization analysis and because a clean document can still be attached by
-the wrong principal, scoped to the wrong resource, or constrained by other
-policy layers. Production hardening should validate policies before deployment,
-require human review for wildcard actions/resources and sensitive conditions,
-protect policy attachment permissions, keep boundaries and SCPs managed by
-separate owners, and monitor policy changes with CloudTrail.
+policy into an identity policy before review. A CI quality can reject unexpected
+`ERROR` and `SECURITY_WARNING` findings, but its allowlist for intentionally bad
+teaching fixtures must not become a production exception. Residual risk remains
+because validation is not complete runtime authorization analysis and because a
+clean document can still be attached by the wrong principal, scoped to the wrong
+resource, or constrained by other policy layers. Production hardening should validate
+policies before deployment, require human review for wildcard actions/resources and
+sensitive conditions, protect policy attachment permissions, keep boundaries and SCPs
+managed by separate owners, and monitor policy changes with CloudTrail.
 
 ## Clean up
 

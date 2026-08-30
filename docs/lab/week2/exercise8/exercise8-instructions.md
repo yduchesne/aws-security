@@ -87,7 +87,9 @@ role directly.
 
 ### Policy/resource excerpt
 
-The workload role trusts EC2 and grants access to only one object:
+The workload role's trust policy and inline identity policy are declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise8/main.tf). The trust policy permits
+only the EC2 service:
 
 ```hcl
 assume_role_policy = jsonencode({
@@ -101,14 +103,32 @@ assume_role_policy = jsonencode({
 })
 ```
 
+The inline identity policy `Exercise8ReadOnlyApprovedObject` contains both
+statements created for this exercise:
+
 ```hcl
-{
-  Sid      = "ReadOnlyApprovedObject"
-  Effect   = "Allow"
-  Action   = "s3:GetObject"
-  Resource = aws_s3_object.allowed.arn
-}
+policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [
+    {
+      Sid      = "ReadCurrentIdentity"
+      Effect   = "Allow"
+      Action   = "sts:GetCallerIdentity"
+      Resource = "*"
+    },
+    {
+      Sid      = "ReadOnlyApprovedObject"
+      Effect   = "Allow"
+      Action   = "s3:GetObject"
+      Resource = aws_s3_object.allowed.arn
+    },
+  ]
+})
 ```
+
+The `aws_s3_object.allowed.arn` reference is rendered by Terraform at apply
+time to the exact ARN of `exercise8/allowed.txt` in the exercise bucket. The
+excerpt keeps the original reference rather than a resolved example value.
 
 #### Policy/resource analysis
 

@@ -89,7 +89,36 @@ wildcarded safely and is not a Terraform input.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The exercise role's trust policy is declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise10/main.tf):
+
+```hcl
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Effect    = "Allow"
+    Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
+    Action    = "sts:AssumeRole"
+    Condition = {
+      ArnLike = {
+        "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+      }
+    }
+  }]
+})
+```
+
+The `${data.aws_partition.current.partition}` and `${var.source_account_id}`
+interpolations render to the AWS partition and the Dev Lab account ID. The
+`local.source_operator_role_arn_pattern` local renders to
+`arn:<partition>:iam::<Dev-Lab-account-id>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_WorkloadLabAdministrator_*`
+(`us-east-1` omits the Region suffix in the Identity Center role path). The
+excerpt keeps the original interpolation expressions rather than resolved
+example values.
+
+The identity policy created for the exercise is the inline
+`Exercise10Policy`, also declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise10/main.tf):
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -106,15 +135,62 @@ resource "aws_iam_role_policy" "exercise" {
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise10/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
+The S3 bucket resource policy under detection is declared by the
+`external_grant` policy document in
+[`main.tf`](../../../../terraform/lab/week2/exercise10/main.tf); its `count`
+argument ties the policy's existence to the `external_grant_enabled` variable:
+
+```hcl
+data "aws_iam_policy_document" "external_grant" {
+  count = var.external_grant_enabled ? 1 : 0
+
+  statement {
+    sid    = "IntentionalExternalAccountRead"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${var.external_account_id}:root"]
+    }
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:GetObject",
+    ]
+
+    resources = [
+      aws_s3_bucket.exercise.arn,
+      "${aws_s3_bucket.exercise.arn}/*",
+    ]
+  }
+}
+```
+
+The `aws_s3_bucket.exercise.arn` references render to the exact bucket ARN
+created by this root, and `${var.external_account_id}` renders to the Test
+Lab account ID.
+
+A permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
+The trust-policy excerpt defines who may assume the disposable exercise
+role: only principals in the Dev Lab account whose ARN matches the
+`AWSReservedSSO_WorkloadLabAdministrator_*` Identity Center role pattern,
+evaluated through the `ArnLike` condition on `aws:PrincipalArn`. The
+authorized action is `sts:AssumeRole`. It intentionally excludes the Test
+Lab account, human IAM users, and every other Dev Lab role; the wildcard is
+confined to the Identity Center-generated role-name suffix, which is not a
+Terraform input. The account-root principal plus the `aws:PrincipalArn`
+condition is deliberately specific; without the condition the trust would
+cover every principal in the Dev Lab account, so the condition is the
+control that keeps the trust narrow. The role's inline policy and boundary
+remain the constraints on the resulting session.
+
+The identity-policy excerpt is the policy associated with the exercise role.
+Its principal is the role itself, and its only Allow is the harmless
 `sts:GetCallerIdentity` action on all resources. It is intended to permit
 identity verification, not access to arbitrary workload resources. It does not
 trust any principal; trust is defined separately by the role's assume-role
@@ -123,6 +199,19 @@ for other actions produces an implicit deny. The wildcard resource is a weak
 point for readability, although this identity-verification action does not
 provide a narrower resource scope. Always compare this excerpt with the role
 trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise10/main.tf).
+
+The resource-policy excerpt defines which principals may access the
+resource: the Test Lab account root, for `s3:GetBucketLocation`,
+`s3:ListBucket`, and `s3:GetObject` on the exercise bucket and its objects.
+It is the configuration under detection, not a security control. It
+deliberately names an external account principal rather than the public
+wildcard `*`, which is why the bucket's `BlockPublicPolicy` setting does not
+prevent it. It grants a potential cross-account path only: effective access
+still requires an identity-policy Allow for a principal in the Test Lab
+account and must survive applicable boundaries, SCPs, and explicit denies.
+Its weak points are that account-root delegation extends to every Test Lab
+principal that holds a matching identity Allow, and the read-only action
+list still includes `s3:GetObject` on every object in the bucket.
 
 ### Permissions-boundary excerpt
 

@@ -103,7 +103,36 @@ the OIDC trust.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The exercise role's OIDC trust policy is declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise9/main.tf):
+
+```hcl
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Effect    = "Allow"
+    Principal = { Federated = aws_iam_openid_connect_provider.exercise.arn }
+    Action    = "sts:AssumeRoleWithWebIdentity"
+    Condition = {
+      StringEquals = {
+        "${local.oidc_condition_key}:aud" = "sts.amazonaws.com"
+        "${local.oidc_condition_key}:sub" = var.oidc_subject
+      }
+    }
+  }]
+})
+```
+
+The `aws_iam_openid_connect_provider.exercise.arn` reference is rendered by
+Terraform to the ARN of the OIDC provider created by this same root. The
+`local.oidc_condition_key` local is `trimprefix(var.oidc_url, "https://")`,
+for example `token.actions.githubusercontent.com`, and `var.oidc_subject`
+holds the exact configured subject claim such as
+`repo:ORG/REPOSITORY:ref:refs/heads/main`. The excerpt keeps the original
+interpolation expressions rather than resolved example values.
+
+The identity policy created for the exercise is the inline `Exercise9Policy`,
+also declared in [`main.tf`](../../../../terraform/lab/week2/exercise9/main.tf):
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -120,23 +149,37 @@ resource "aws_iam_role_policy" "exercise" {
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise9/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
+A permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
+The trust-policy excerpt defines who may become the role: only a caller
+presenting a web-identity token issued by the exact OIDC provider created by
+this exercise, with an audience of `sts.amazonaws.com` and a `sub` claim that
+exactly equals `var.oidc_subject`. The authorized action is
+`sts:AssumeRoleWithWebIdentity`, not `sts:AssumeRole`. It intentionally
+excludes every human principal, every other OIDC provider, and every other
+repository, branch, or environment claim: a token from the same provider with
+a different `sub` is rejected by the `StringEquals` condition, which is the
+confused-deputy control under test. The exact-subject match is deliberately
+specific; a wildcard or patterned subject would let any workflow token from
+the provider assume the role. Its weak point is that the trust follows the
+claim, not the caller: anyone who can push to the trusted repository and
+branch can obtain a token with the matching `sub`, so branch protection,
+required reviews, and environment approvals remain the compensating controls
+on the GitHub side.
+
+The identity-policy excerpt is the policy associated with the exercise role.
+Its principal is the role itself, and its only Allow is the harmless
 `sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise9/main.tf).
+identity verification after federation, not access to arbitrary workload
+resources, and it does not authorize the trust operation. It intentionally
+contains no explicit Deny, so the absence of an Allow for other actions
+produces an implicit deny. The wildcard resource is a weak point for
+readability, although this identity-verification action does not provide a
+narrower resource scope. Always compare this excerpt with the role trust
+policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise9/main.tf).
 
 ### Permissions-boundary excerpt
 
