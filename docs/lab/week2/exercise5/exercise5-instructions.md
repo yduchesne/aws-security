@@ -14,6 +14,7 @@ evidence, and remove only disposable resources.
 - [Learning objectives](#learning-objectives).
 - [Terraform configuration and ownership](#terraform-configuration-and-ownership).
   - [Policy/resource excerpt](#policyresource-excerpt).
+  - [Trust policy excerpt](#trust-policy-excerpt).
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
@@ -122,6 +123,49 @@ for other actions produces an implicit deny. The wildcard resource is a weak
 point for readability, although this identity-verification action does not
 provide a narrower resource scope. Always compare this excerpt with the role
 trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise5/main.tf).
+
+### Trust policy excerpt
+
+`Week2Exercise5Role` is assumable only through the trust policy declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise5/main.tf). The excerpt
+below is taken from the role's `assume_role_policy`. The
+`local.source_operator_role_arn_pattern` value it references resolves to
+`arn:<partition>:iam::<source_account_id>:role/aws-reserved/sso.amazonaws.com/[<region>/]AWSReservedSSO_WorkloadLabAdministrator_*`,
+where the Region segment is present only outside `us-east-1`:
+
+```hcl
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Effect    = "Allow"
+    Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
+    Action    = "sts:AssumeRole"
+    Condition = {
+      ArnLike = {
+        "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+      }
+    }
+  }]
+})
+```
+
+#### Trust policy analysis
+
+This trust policy answers who may assume `Week2Exercise5Role`. The trusted
+principal is the Dev Lab (`source_account_id`) account root, and the only
+authorized action is `sts:AssumeRole`. An account-root principal alone would
+trust every principal in the account, so the `ArnLike` condition on
+`aws:PrincipalArn` narrows trust to the IAM role path that IAM Identity Center
+provisions for the `WorkloadLabAdministrator` permission set. The policy
+intentionally distrusts principals in every other account and Dev Lab
+principals whose ARN falls outside that reserved path, including ordinary IAM
+roles, IAM users, and temporary session ARNs; it never trusts an
+`assumed-role/...` session ARN. The trailing `*` tolerates IAM Identity Center
+deleting and recreating its generated role, at the cost of trusting any role
+name sharing that prefix rather than one exact ARN. Assuming the role grants
+nothing by itself: the resulting session still requires the identity policy
+Allow, remains under the permissions boundary, and remains subject to any
+applicable SCP, session policy, or explicit deny.
 
 ### Permissions-boundary excerpt
 

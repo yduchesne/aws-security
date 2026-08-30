@@ -14,6 +14,7 @@ evidence, and remove only disposable resources.
 - [Learning objectives](#learning-objectives).
 - [Terraform configuration and ownership](#terraform-configuration-and-ownership).
   - [Policy/resource excerpt](#policyresource-excerpt).
+  - [Trust policy excerpt](#trust-policy-excerpt).
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
@@ -91,20 +92,29 @@ boundary. The root reads and attaches the existing
 
 ### Policy/resource excerpt
 
-The role policy implements project matching for S3 objects:
+The role policy `Exercise6ProjectAbacPolicy` contains two statements: an
+identity-verification Allow and the project-matching Allow for S3 objects:
 
 ```hcl
-{
-  Sid      = "ReadObjectsForMatchingProject"
-  Effect   = "Allow"
-  Action   = "s3:GetObject"
-  Resource = "${aws_s3_bucket.exercise.arn}/*"
-  Condition = {
-    StringEquals = {
-      "s3:ExistingObjectTag/Project" = "$${aws:PrincipalTag/Project}"
+Statement = [
+  {
+    Sid      = "ReadCurrentIdentity"
+    Effect   = "Allow"
+    Action   = "sts:GetCallerIdentity"
+    Resource = "*"
+  },
+  {
+    Sid      = "ReadObjectsForMatchingProject"
+    Effect   = "Allow"
+    Action   = "s3:GetObject"
+    Resource = "${aws_s3_bucket.exercise.arn}/*"
+    Condition = {
+      StringEquals = {
+        "s3:ExistingObjectTag/Project" = "$${aws:PrincipalTag/Project}"
+      }
     }
-  }
-}
+  },
+]
 ```
 
 Inspect the complete declaration in
@@ -114,7 +124,9 @@ The doubled dollar sign is Terraform escaping; the rendered IAM policy contains
 
 #### Policy/resource analysis
 
-The identity policy is associated with `Week2Exercise6Role`. It allows
+The identity policy is associated with `Week2Exercise6Role`. Its
+`ReadCurrentIdentity` statement permits only harmless identity verification on
+all resources. Its `ReadObjectsForMatchingProject` statement allows
 `s3:GetObject` only for objects in the exercise bucket and only when the
 object's existing `Project` tag equals the principal's `Project` tag. The role
 tag becomes a principal tag in its role sessions, so this fixture compares
@@ -124,6 +136,50 @@ an implicit deny. The policy does not allow changing principal or object tags.
 Tag-governance permissions remain security-sensitive because a principal able
 to rewrite either authorization attribute could bypass the intended project
 separation.
+
+### Trust policy excerpt
+
+`Week2Exercise6Role` is assumable only through the trust policy declared in
+[`main.tf`](../../../../terraform/lab/week2/exercise6/main.tf). The excerpt
+below is taken from the role's `assume_role_policy`. The
+`local.source_operator_role_arn_pattern` value it references resolves to
+`arn:<partition>:iam::<source_account_id>:role/aws-reserved/sso.amazonaws.com/[<region>/]AWSReservedSSO_WorkloadLabAdministrator_*`,
+where the Region segment is present only outside `us-east-1`:
+
+```hcl
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Effect    = "Allow"
+    Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
+    Action    = "sts:AssumeRole"
+    Condition = {
+      ArnLike = {
+        "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+      }
+    }
+  }]
+})
+```
+
+#### Trust policy analysis
+
+This trust policy answers who may become `Week2Exercise6Role`. The trusted
+principal is the Dev Lab (`source_account_id`) account root, and the only
+authorized action is `sts:AssumeRole`. An account-root principal alone would
+trust every principal in the account, so the `ArnLike` condition on
+`aws:PrincipalArn` restricts trust to the IAM role path that IAM Identity
+Center provisions for the `WorkloadLabAdministrator` permission set. The
+policy intentionally distrusts principals in every other account and Dev Lab
+principals whose ARN falls outside that reserved path, including ordinary IAM
+roles, IAM users, and temporary session ARNs. Assuming the role is also how
+the tested session receives the role's `Project=Alpha` value as
+`aws:PrincipalTag/Project`, which the ABAC identity policy then compares with
+each object's tag. The trailing `*` tolerates IAM Identity Center recreating
+its generated role but trusts any role name sharing that prefix, which is
+slightly broader than a single exact ARN. The trust decision grants no S3
+access by itself; the identity policy Allow, the permissions boundary, and any
+applicable SCP or explicit deny still govern the resulting session.
 
 ### Permissions-boundary excerpt
 
