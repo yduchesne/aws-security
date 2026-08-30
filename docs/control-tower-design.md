@@ -137,6 +137,8 @@ terraform/
 ├── workloads/
 │   └── org_units/          # Governed Workloads, Dev, Test, and Prod OUs
 └── lab/
+    ├── foundation/          # Reusable tagged Dev Lab VPC and public exercise subnet
+    ├── evidence/            # Separate S3-only organization trail and Log Archive evidence bucket
     └── week2/
         ├── baseline/       # Persistent lab-role boundaries in Dev Lab and Test Lab
         ├── exercise1/     # Disposable cross-account AssumeRole exercise resources
@@ -153,6 +155,12 @@ The workload OU root runs after bootstrap and must converge before AFT account r
 
 ```text
 bootstrap → workloads/org_units → AFT account requests
+```
+
+The lab evidence root is a separate post-Control-Tower phase:
+
+```text
+bootstrap → identity_center → AFT platform and lab accounts → lab/foundation → identity_center/workload_access → lab/evidence → Week 2 baseline → exercises
 ```
 
 A separate AFT account-request repository or directory is expected after AFT is deployed.
@@ -176,9 +184,23 @@ Bootstrap does not own the AFT OU or AFT management account.
 
 `terraform/identity_center/workload_access/` is a separate central root. The parent Identity Center root creates a distinct named lab-baseline user; workload access looks up that user and owns its protected boundary-management group, membership, permission set, and direct assignments to the two lab accounts. It also creates project-owned workload groups and reusable permission sets before ordinary workload accounts exist. Its account-assignment map defaults to empty and receives explicit account IDs only after AFT provisioning and Control Tower enrollment complete. It creates two manually operated test-user records without memberships or assignments and does not modify Control Tower groups. Its bounded `WorkloadLabAdministrator` is assignable only to explicitly allowlisted Dev Lab and Test Lab accounts; every lab-created role must carry a trusted-baseline-managed `WorkloadLabRoleBoundary`.
 
+The lab exercise capability adds only the EC2 operations required for native
+workload-identity fixtures: tagged instances, tagged security groups,
+instance profiles under `/week*/exercise*/`, and EC2-only passing of bounded
+lab-exercise roles. The role trusts `ec2.amazonaws.com`, requires IMDSv2, has no
+inbound security-group rule, and can read only one approved object through its
+identity policy. These permissions must not be generalized to other workload
+administration.
+
 `terraform/identity_center/aft_access/` is a separate post-account root. It looks up—but does not own—the human user created or referenced by Account Factory, then creates `AFTPlatformAdministrators`, `AFTPlatformAdministration`, the group membership, and an assignment scoped to the AFT management account.
 
 The security model and residual escalation risks are documented in [`identity_center_security.md`](identity_center_security.md).
+
+The workload permission set includes read-only access to the project-owned lab
+evidence bucket's Dev Lab and Test Lab prefixes. The bucket policy provides an
+independent cross-account restriction to the expected
+`AWSReservedSSO_WorkloadLabAdministrator_*` role patterns. This does not assign
+lab users to the Log Archive account and grants no evidence mutation.
 
 ## AFT Deployment Responsibilities
 
@@ -198,6 +220,48 @@ This separation models the asynchronous Control Tower dependencies and prevents 
 The root may run independently after bootstrap, but it must converge before an AFT account request targets `Dev`, `Test`, or `Prod`.
 
 Workload account assignments remain centrally owned by `terraform/identity_center/workload_access/`. AFT and its in-account customizations do not create organization-wide Identity Center groups, permission sets, or assignments.
+
+## Project-Owned Dev Lab Network Foundation
+
+The Dev Lab account does not depend on an AWS default VPC. After AFT provisions
+and Control Tower enrolls that account, `terraform/lab/foundation/` creates a
+separate project-owned VPC and public subnet tagged for exercise discovery. The
+root is independent from bootstrap because the member account does not exist
+when the landing-zone control plane is first established.
+
+The temporary `ct-bootstrap` profile assumes `AWSControlTowerExecution` only for
+initial foundation provisioning. Test users do not receive network-control-plane
+permissions. Exercise 8 can describe and consume the tagged subnet, create its
+own no-ingress security group, and launch only constrained tagged instances.
+The foundation creates no NAT gateway and no persistent compute.
+
+## Project-Owned Lab Evidence Trail
+
+The Control Tower-managed organization trail remains under Control Tower
+ownership and is not customized for exercise S3 object data events. Directly
+changing its event selectors or destinations is drift-prone and may be reverted
+by landing-zone repair or update operations.
+
+`terraform/lab/evidence/` therefore creates a distinct customer-managed
+organization trail. It records only S3 object `Data` events for bucket ARNs
+under the configured lab prefix, excludes management events, enables log-file
+validation, and delivers only to a dedicated project-owned bucket in the Log
+Archive account. It has no CloudWatch Logs integration and does not reuse or
+change Control Tower logging buckets or roles.
+
+The root runs only after the landing zone is `ACTIVE` and `IN_SYNC`. The
+management provider uses the temporary `ct-bootstrap` profile; the Log Archive
+provider assumes the existing `AWSControlTowerExecution` role. This is an
+initial provisioning path, not a steady-state lab-user trust path. Human lab
+users receive read-only cross-account S3 access to their account log prefixes
+through `WorkloadLabAdministrator` and never assume the execution role.
+
+The evidence root deliberately omits `prevent_destroy` and uses a force-destroy
+bucket because the project requires reviewed `terraform apply -destroy` to
+remove the entire lab evidence plane. This operation irreversibly deletes
+retained exercise evidence but does not affect the Control Tower-managed trail.
+See [`cloud-trail-logs.md`](cloud-trail-logs.md) for the complete design and
+operating procedure.
 
 ## Automatic Account Enrollment
 

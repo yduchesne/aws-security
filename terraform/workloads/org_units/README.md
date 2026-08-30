@@ -24,7 +24,6 @@ Use the repository wrapper to initialize, validate, and plan this root with the
 shared backend configuration:
 
 ```bash
-./tf.sh --phase workloads --chk
 ./tf.sh --phase workloads --dry-run
 ```
 

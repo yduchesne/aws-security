@@ -60,7 +60,6 @@ terraform -chdir=terraform/identity_center apply
 Then plan and apply the complete Identity Center phase:
 
 ```bash
-./tf.sh --phase identity-center --fmt
 ./tf.sh --phase identity-center --dry-run
 ./tf.sh --phase identity-center --apply
 ```
@@ -72,6 +71,48 @@ creates `WorkloadLabBaselineAdministrators` and the protected one-hour
 membership, and assigns that access directly to the allowlisted Dev Lab and
 Test Lab accounts. Activate the user and register strong MFA before configuring
 the baseline profiles.
+
+### Deploy the Dev Lab network foundation
+
+After AFT provisions and Control Tower enrolls the Dev Lab account, create the
+reusable VPC and tagged public subnet used by Exercise 8:
+
+```bash
+./tf.sh --phase lab-foundation --dry-run
+./tf.sh --phase lab-foundation --apply
+```
+
+Review the configured CIDRs for overlap. The plan must create no NAT gateway or
+EC2 instance. Exercise 8 discovers the subnet through
+`Purpose=LabExercises` and `Network=Public`; test users receive no VPC,
+route-table, subnet, or internet-gateway administration.
+
+### Deploy the shared lab evidence trail
+
+After the landing zone and Identity Center phase converge, deploy the separate
+customer-managed S3-only organization trail and its dedicated Log Archive
+bucket:
+
+```bash
+./tf.sh --phase lab-evidence --dry-run
+./tf.sh --phase lab-evidence --apply
+```
+
+The plan must not modify the Control Tower-managed trail or logging buckets. It
+should create only the resources owned by
+[`terraform/lab/evidence/`](../../../terraform/lab/evidence/): the dedicated
+evidence bucket and controls in Log Archive plus the customer-managed
+organization trail in the management account.
+
+The workload-access permission set references the deterministic evidence bucket
+and grants `WorkloadLabAdministrator` read-only access to the Dev Lab and Test
+Lab log prefixes. If that permission-set change was applied after the current
+SSO session began, log out and sign in again before testing evidence access.
+Lab users remain in the Dev/Test accounts and receive no Log Archive account
+assignment.
+
+See [`cloud-trail-logs.md`](../../cloud-trail-logs.md) for ownership, event
+selectors, access controls, retrieval, cost, and destruction behavior.
 
 ### Deploy the Week 2 baseline
 

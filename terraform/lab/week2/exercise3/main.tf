@@ -1,6 +1,8 @@
 # Curriculum: Core
 locals {
-  boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  boundary_arn                     = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  source_operator_role_path_prefix = var.aws_region == "us-east-1" ? "/aws-reserved/sso.amazonaws.com/" : "/aws-reserved/sso.amazonaws.com/${var.aws_region}/"
+  source_operator_role_arn_pattern = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:role${local.source_operator_role_path_prefix}AWSReservedSSO_WorkloadLabAdministrator_*"
 }
 
 data "aws_iam_policy" "lab_role_boundary" {
@@ -15,9 +17,12 @@ resource "aws_iam_role" "exercise" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { AWS = var.source_operator_role_arn }
+      Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
       Action    = "sts:AssumeRole"
       Condition = {
+        ArnLike = {
+          "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+        }
         StringEquals = {
           "sts:ExternalId" = var.external_id
         }

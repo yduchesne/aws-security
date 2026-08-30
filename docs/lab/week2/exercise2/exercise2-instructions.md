@@ -28,7 +28,7 @@ persistent `WorkloadLabRoleBoundary` in both accounts.
 - [Phase 2 — Explicit role trust hardening](#phase-2---explicit-role-trust-hardening).
   - [Phase 2 tests](#phase-2-tests).
 - [Authorization decision matrix](#authorization-decision-matrix).
-- [Inspect CloudTrail evidence](#inspect-cloudtrail-evidence).
+- [Evidence and security analysis](#evidence-and-security-analysis).
 - [Investigating in the Console](#investigating-in-the-console).
   - [Inspect IAM Identity Center access](#inspect-iam-identity-center-access).
   - [Inspect the source-account roles](#inspect-the-source-account-roles).
@@ -176,30 +176,15 @@ The required values are:
 
 - The Dev Lab/source and Test Lab/target account IDs.
 - `week2-source` and `week2-target`, or equivalent Identity Center-backed
-  profiles;
-- The exact IAM ARN of the source account's provisioned
-  `AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>` role; and.
+  profiles; and.
 - `TF_VAR_trust_mode=account` for the first phase.
 
-The source operator ARN is derived from the AWS CLI configuration created for
-the `week2-source` and `week2-target` profiles in Exercise 1. Before continuing,
-review [Create the AWS CLI profiles](../exercise1/exercise1-instructions.md#create-the-aws-cli-profiles)
-and [Configure the provisioned IAM role ARN](../exercise1/exercise1-instructions.md#configure-the-provisioned-iam-role-arn)
-in the Exercise 1 instructions. Those sections explain the profile purpose,
-Identity Center role-session verification, and conversion from the temporary
-STS session ARN to the underlying IAM role ARN.
-
-The source operator ARN must be an IAM role ARN, not an STS session ARN and
-not an IAM Identity Center permission-set ARN. Obtain the role name from the
-source session if necessary:
-
-```bash
-aws sts get-caller-identity --profile week2-source --query Arn --output text
-```
-
-Convert the `assumed-role/...` result to the underlying IAM role ARN using the
-Identity Center reserved-role path, as described in Exercise 1. Never put
-credentials, access tokens, or copied session credentials in `.env`.
+Terraform derives the source `WorkloadLabAdministrator` role ARN pattern from
+the source account ID and Identity Center Region. No generated role suffix or
+source operator ARN is required in `.env`. Review
+[Create the AWS CLI profiles](../exercise1/exercise1-instructions.md#create-the-aws-cli-profiles)
+for profile purpose and role-session verification. Never put credentials,
+access tokens, or copied session credentials in `.env`.
 
 The exercise-specific `.env.example` is the only configuration template
 maintained for this root. Terraform does not load `.env` automatically; source
@@ -280,8 +265,9 @@ configuration is in
 
 ### Source-role trust policy
 
-Both source roles use the same trust policy. It permits only the exact
-Identity Center-provisioned role to obtain a source-role session:
+Both source roles use the same suffix-resilient trust policy. The account-root
+principal is narrowed by `aws:PrincipalArn` to the generated
+`WorkloadLabAdministrator` role path:
 
 ```hcl
 data "aws_iam_policy_document" "operator_trust" {
@@ -292,12 +278,21 @@ data "aws_iam_policy_document" "operator_trust" {
 
     principals {
       type        = "AWS"
-      identifiers = [var.source_operator_role_arn]
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root"]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:PrincipalArn"
+      values   = [local.source_operator_role_arn_pattern]
     }
   }
 }
 ```
 
+The wildcard covers only the generated permission-set role suffix, allowing
+assignment deletion and recreation without leaving an invalid principal. It
+does not trust other source-account roles because the ARN condition must match.
 This policy answers **who may become the source role**. It does not grant the
 source role permission to assume the target role. That second decision comes
 from the source role's identity policy.
@@ -663,7 +658,27 @@ remove that capability. An inherited SCP or another explicit deny can still
 make any row fail. If the environment has an unexpected SCP restriction,
 record it rather than changing organizational policy to force the test result.
 
-## Inspect CloudTrail evidence
+## Evidence and security analysis
+
+Reload the exact role ARNs and retrieve the source policies and current target
+trust policy:
+
+```bash
+export EXERCISE2_APPROVED_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise2 output -raw approved_role_arn)"
+export EXERCISE2_UNAPPROVED_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise2 output -raw unapproved_role_arn)"
+export EXERCISE2_TARGET_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise2 output -raw target_role_arn)"
+aws iam get-role --profile week2-source --role-name ApprovedAutomationRole --query 'Role.{Arn:Arn,Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary.PermissionsBoundaryArn}' --output json --no-cli-pager
+aws iam get-role --profile week2-source --role-name UnapprovedRole --query 'Role.{Arn:Arn,Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary.PermissionsBoundaryArn}' --output json --no-cli-pager
+aws iam get-role-policy --profile week2-source --role-name ApprovedAutomationRole --policy-name AssumeTrustHardeningTarget --output json --no-cli-pager
+aws iam get-role-policy --profile week2-source --role-name UnapprovedRole --policy-name AttemptTrustHardeningTarget --output json --no-cli-pager
+aws iam get-role --profile week2-target --role-name TrustHardeningTargetRole --query 'Role.{Arn:Arn,Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary.PermissionsBoundaryArn}' --output json --no-cli-pager
+```
+
+Confirm both source roles trust the same Identity Center operator, carry the
+same boundary, and have equivalent permission to request the target role. In
+phase 1, the target trust principal is the source account root; in phase 2 it is
+only `ApprovedAutomationRole`. Capture this configuration before and after the
+phase-2 plan so the trust-policy change can be correlated with the matrix.
 
 Use the target-account operator profile to search for STS events in the home
 Region:
@@ -671,7 +686,7 @@ Region:
 ```bash
 aws cloudtrail lookup-events \
   --profile week2-target \
-  --region us-east-2 \
+  --region "$TF_HOME_REGION" \
   --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole
 ```
 
@@ -709,17 +724,19 @@ broadening the exercise roles to make a page load.
 In the management account, open **IAM Identity Center → AWS accounts** and
 verify that the temporary exercise users can obtain
 `WorkloadLabAdministrator` in the intended lab accounts. Confirm that the
-permission-set assignment exists, and inspect the generated
-`AWSReservedSSO_WorkloadLabAdministrator_<SUFFIX>` role name if the source
-operator ARN must be reconstructed. Do not modify that Identity Center-owned
-role or its permission set from this exercise.
+permission-set assignment exists. The generated
+`AWSReservedSSO_WorkloadLabAdministrator_*` suffix may change after assignment
+recreation and does not need to be copied into Terraform inputs. Do not modify
+that Identity Center-owned role or its permission set from this exercise.
 
 ### Inspect the source-account roles
 
 In the Dev Lab account, open **IAM → Roles** and search under the
 `/week2/exercise2/` path. For both roles verify:
 
-- **Trust relationships** contain only `TF_VAR_source_operator_role_arn`.
+- **Trust relationships** use the Dev Lab account root plus an
+  `aws:PrincipalArn` condition matching only the
+  `AWSReservedSSO_WorkloadLabAdministrator_*` role path.
 - The inline policy grants `sts:AssumeRole` only on the target role ARN.
 - `WorkloadLabRoleBoundary` is attached; and
 - The maximum session duration is one hour.

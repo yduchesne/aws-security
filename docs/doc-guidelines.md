@@ -229,6 +229,123 @@ must go beyond listing commands or attaching raw evidence. It should:
 - Document residual risk and practical production hardening recommendations.
 - Distinguish an exercise observation, such as unused access during a short observation window, from a conclusion that access is never required.
 
+#### AWS CLI evidence collection
+
+Every **Evidence and security analysis** section must provide contextual AWS CLI
+commands that let the reader independently retrieve the configuration and logs
+that explain every positive and negative test. Do not provide one generic
+command set unrelated to the exercise's actual API calls and resources.
+
+For each conducted test, include commands that retrieve:
+
+- The exact principal, role, resource, policy, trust relationship, permissions
+  boundary, session policy, SCP, resource policy, tags, condition values, and
+  other configuration that influenced the decision, as applicable.
+- The active policy document and policy version rather than only a policy name.
+- The principal and resource attributes evaluated by ABAC or other contextual
+  conditions, including each value that matched or differed.
+- CloudTrail management events, data events, service logs, validation findings,
+  analyzer findings, configuration history, or other telemetry that records the
+  operation and its outcome.
+- Stable identifiers needed to correlate evidence, including event ID, request
+  ID, query ID, timestamp, account ID, Region, principal ARN, session name,
+  resource ARN, action, error code, and error message when available.
+
+For every command:
+
+- Give the command its own descriptive subsection under **Evidence and security
+  analysis**. Do not group unrelated commands into one undifferentiated code
+  block.
+- Put the command and its explanation in the same subsection. The explanation
+  must immediately follow the command and identify the fields, values, and
+  security conclusion the reader should inspect.
+- State its purpose before the command.
+- Explain which output fields and expected values the reader must examine after
+  the command.
+- Tie those fields to a specific happy or unhappy path and explain how they
+  support the authorization or security conclusion.
+- Use exact exercise role names, policy names, statement IDs, tag keys, object
+  keys, resource paths, ARN suffixes, API event names, and Terraform outputs.
+- Explain how to distinguish the intended event or resource from unrelated
+  activity with a similar name.
+- Use a profile authorized only for the required evidence operation. If the
+  exercise persona cannot query centralized evidence, name a separate approved
+  evidence profile variable instead of silently assuming broader permissions.
+- Avoid printing or persisting access keys, secret keys, session tokens, OIDC
+  tokens, passwords, or other credentials.
+
+Evidence procedures should begin by loading exact resource identifiers from
+Terraform outputs or service APIs. Do not rely on copied example account IDs,
+manually reconstructed ARNs, or stale resource names when an authoritative
+command can retrieve them.
+
+When an exercise uses the shared evidence bucket, its instructions must include
+every command required to retrieve the evidence: load the bucket and
+organization identifiers, determine the account-level prefix, list or select
+the delivered Region/date directory, download the relevant log objects, filter
+records for the exact principal, action, resource, and test outcome, and remove
+local copies afterward. A reference to
+[`cloud-trail-logs.md`](cloud-trail-logs.md) may provide architecture and
+troubleshooting context, but it must not replace executable, exercise-specific
+commands.
+
+Apply this command-by-command structure consistently to every exercise that has
+resource or log evidence, including later exercises. If a later exercise is
+only a scaffold and has no implemented fixture or authoritative resource
+identifiers, say so explicitly rather than inventing commands or claiming that
+generic evidence is exercise-specific.
+
+When retrieving IAM configuration:
+
+- Use commands such as `get-role`, `get-role-policy`, `get-policy`, and
+  `get-policy-version` as appropriate.
+- Retrieve role tags, trust-policy principals and conditions, boundary ARNs,
+  inline policy statements, managed-policy versions, and relevant identity or
+  resource-policy conditions.
+- Explain which policy is a grant, which is a maximum ceiling, which establishes
+  trust, and which condition caused the positive or negative outcome.
+
+When retrieving resource configuration:
+
+- Query the exact authorization-relevant settings, such as object or resource
+  tags, encryption state, public-access controls, network rules, ownership,
+  versioning, or logging configuration.
+- Provide separate commands or clearly separated output for each resource used
+  by the positive and negative tests.
+- State the expected differences between those resources and hold unrelated
+  request factors constant where practical.
+
+When retrieving logs and findings:
+
+- Query the exact API event names generated by the tests and filter by the
+  exercise principal, role session, resource, account, Region, and test time
+  window.
+- Explain the expected successful outcome, such as an absent `errorCode` and an
+  expected response resource, and the expected negative outcome, such as
+  `AccessDenied`, a validation error, or a security finding.
+- Distinguish CloudTrail management events from data events. Do not use
+  `lookup-events` for S3 object access, Lambda invocation, or other data events
+  that require configured data-event collection.
+- Verify a trail's event selectors, an event data store's advanced selectors,
+  analyzer scope, log-group retention, or equivalent evidence coverage before
+  claiming that a missing event proves anything.
+- Account for asynchronous evidence systems. Provide bounded polling or status
+  commands for CloudTrail Lake queries, Access Analyzer findings, Config
+  evaluations, or similar operations instead of assuming immediate completion.
+- Retrieve final query or finding results and identify the fields that prove
+  which test succeeded or failed.
+- Document a telemetry gap when the required collection was not enabled before
+  the test. Do not retroactively claim evidence, and do not change organization
+  trails, centralized stores, or retention settings without approval.
+
+Conclude with a correlation table or equivalent structured analysis containing
+one row per test. It should compare principal attributes, resource attributes,
+request context, predicted CLI outcome, actual CLI outcome, log or finding
+outcome, stable evidence ID, and the determining policy or control layer.
+Commands that fail because of expired authentication, wrong account or Region,
+missing resources, malformed input, insufficient evidence-query permission, or
+network errors are not valid proof of the intended security-control outcome.
+
 The section should provide enough context for a reader to understand not only
 what happened, but why it happened and what the result means for a production
 security design.
@@ -320,13 +437,102 @@ prerequisite unless that dependency is explicitly documented.
 
 ## Console investigation
 
-- Include an **Investigating in the Console** section for exercises where console inspection is useful.
-- Explain which account and permission-set session should be used.
-- Verify account IDs before inspecting resources.
-- Identify the exact IAM roles, policies, permissions boundaries, tags, and resource policies to inspect.
-- Warn that console pages may require broad list permissions not granted to a deliberately narrow exercise role.
-- Do not broaden policies merely to make console pages work.
-- Use the CLI, CloudTrail, direct resource views, or an approved read-only session where necessary.
+Include an **Investigating in the Console** section whenever console inspection
+can help explain the exercise. The section must be exercise-specific and
+procedural; do not use vague directions such as "inspect the relevant policy"
+or "look in CloudTrail."
+
+### Session and navigation
+
+- State the exact AWS account and IAM Identity Center permission set or other
+  approved session to use.
+- Require the reader to verify the account ID and Region before inspecting
+  resources.
+- Provide the complete console navigation path, such as **IAM → Access
+  management → Roles**, **S3 → Buckets**, or **CloudTrail → Event history**.
+- Explain how to locate dynamically named resources. Prefer an exact Terraform
+  output command, ARN suffix, resource path, tag, or deterministic name rather
+  than asking the reader to browse an unfiltered list.
+- Use an approved inspection or read-only session when the deliberately narrow
+  exercise role lacks console list permissions. Warn about that limitation and
+  do not broaden the exercise policy merely to make console navigation work.
+
+### Resource and policy inspection
+
+- Name every exercise resource, role, inline policy, managed policy, permission
+  set, boundary, tag key, condition key, and policy statement that the reader
+  must inspect.
+- Provide the most significant identifying portion of each ARN, such as the
+  account, path, policy name, role name, or resource-name prefix. Explain how
+  the reader can distinguish it from similarly named or AWS-managed resources.
+- Identify the exact console tab, field, or JSON element to examine—for example,
+  **Permissions**, **Trust relationships**, **Permissions boundary**,
+  `Principal.AWS`, `Action`, `Resource`, `Condition`, or a statement `Sid`.
+- State the expected value and explain its security purpose. For tags used by
+  ABAC, identify the principal and resource tag keys, their expected values,
+  the condition comparing them, and which happy- and unhappy-path combinations
+  should allow or deny access.
+- Distinguish identity policies, trust policies, resource policies, permissions
+  boundaries, session policies, and SCPs. Explain what decision each inspected
+  policy contributes and what it does not grant by itself.
+- If encryption, public-access controls, versioning, logging, network controls,
+  or other resource settings matter to the exercise, identify the exact console
+  section and expected state rather than saying only to inspect security
+  settings.
+
+### SCP inspection
+
+When SCP inspection is relevant:
+
+- State whether the exercise creates an SCP or only inherits existing
+  organization and Control Tower policies.
+- Name each known exercise-owned SCP exactly. For pre-existing or generated
+  SCPs whose names vary by environment, direct the reader to the target
+  account's **Service control policies** view and identify the exact account,
+  OU, parent OU, and organization-root inheritance levels to inspect. Do not
+  invent a stable SCP name when AWS or Control Tower generates it dynamically.
+- Tell the reader which displayed policies matter, such as `FullAWSAccess`, an
+  exercise-specific SCP, or Control Tower preventive-control SCPs. Explain the
+  purpose of each known policy.
+- Identify the actions, effects, resources, and conditions to search for. For
+  example, instruct the reader to find `Effect: "Deny"` with `s3:GetObject`,
+  `s3:*`, or `Action: "*"`, and explain how that statement would affect the
+  tested request.
+- Require the reader to record the actual policy name and attachment or
+  inheritance source. Do not instruct them to modify organization or Control
+  Tower policies merely to complete an exercise unless that mutation is the
+  explicitly approved scenario.
+
+### CloudTrail investigation
+
+CloudTrail steps must correspond to the API calls made by the exercise's
+positive and negative tests:
+
+- Give the exact console path to **CloudTrail → Event history**, **CloudTrail →
+  Lake → Query**, a trail's S3 log destination, or another approved evidence
+  view.
+- Name every API event to search for, such as `AssumeRole`, `CreateRole`, or
+  `PutObject`, and provide the appropriate lookup attribute or query filter.
+- Explain how to select the exercise event using concrete fields such as
+  `eventSource`, `eventName`, `eventTime`, `userIdentity.arn`,
+  `requestParameters.roleArn`, `requestParameters.roleSessionName`, resource
+  ARN, bucket name, object key, `errorCode`, and `errorMessage`.
+- State the expected evidence for each happy and unhappy path. A successful
+  event should have the expected response identity or resource and no error
+  code; an expected denial should identify the same intended caller and target
+  while showing the relevant authorization error.
+- Distinguish CloudTrail management events from data events. Do not claim that
+  S3 object, Lambda invocation, or other data events appear in standard Event
+  history when they require an enabled data-event selector or event data store.
+- Tell the reader how to verify that the required trail selector or CloudTrail
+  Lake event data store covered the resource before the test. If collection was
+  not enabled, require the reader to document the telemetry gap rather than
+  infer an event or change an organization trail without approval.
+- Correlate console evidence with the CLI result and policy evaluation. A
+  missing event or an unrelated authentication, configuration, Region, or
+  network failure is not proof that the tested control denied the request.
+- Keep evidence redacted and do not copy credentials, session tokens, or other
+  sensitive response fields into exercise documentation.
 
 ## Markdown formatting
 

@@ -172,8 +172,8 @@ source terraform/lab/week2/exercise3/.env
 The global environment must be sourced first because the exercise file refers
 to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 `TF_MANAGEMENT_ACCOUNT_ID`, and `TF_HOME_REGION`. For this exercise, replace
-the `<SUFFIX>` and `<unique-customer-id>` placeholders and retain these
-exercise-specific values:
+the `<unique-customer-id>` placeholder and retain these exercise-specific
+values. No IAM Identity Center-generated role suffix is required:
 
 ```bash
 export TF_VAR_source_aws_profile="week2-source"
@@ -232,18 +232,21 @@ trust policy and the complete declaration in [`main.tf`](../../../../terraform/l
 
 ### Trust-policy excerpt
 
-The exercise role's trust policy names the Identity Center-provisioned
-`WorkloadLabAdministrator` role supplied through `source_operator_role_arn` and
-requires the configured external ID:
+The exercise role's trust policy uses the Dev Lab account principal, narrows it
+to the suffix-resilient `WorkloadLabAdministrator` role path, and requires the
+configured external ID:
 
 ```hcl
 assume_role_policy = jsonencode({
   Version = "2012-10-17"
   Statement = [{
     Effect    = "Allow"
-    Principal = { AWS = var.source_operator_role_arn }
+    Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root" }
     Action    = "sts:AssumeRole"
     Condition = {
+      ArnLike = {
+        "aws:PrincipalArn" = local.source_operator_role_arn_pattern
+      }
       StringEquals = {
         "sts:ExternalId" = var.external_id
       }
@@ -252,13 +255,13 @@ assume_role_policy = jsonencode({
 })
 ```
 
-The trusted principal may request `sts:AssumeRole`, but the Allow applies only
-when the request context contains an exactly matching `sts:ExternalId`. Other
-principals are excluded because they are not named in `Principal`; requests
-from the named principal with a missing or incorrect external ID are excluded
-by `StringEquals`. Broader account-level trust would allow more principals to
-attempt assumption and would weaken attribution and containment. This trust
-policy does not grant the caller identity permission to invoke `AssumeRole`,
+The account principal may request `sts:AssumeRole`, but the Allow applies only
+when `aws:PrincipalArn` matches the generated
+`AWSReservedSSO_WorkloadLabAdministrator_*` role path and the request contains
+an exactly matching `sts:ExternalId`. Other account roles fail `ArnLike`; a
+matching role with a missing or incorrect external ID fails `StringEquals`.
+The suffix wildcard survives Identity Center role recreation without trusting
+unrelated roles. This trust policy does not grant the caller identity permission to invoke `AssumeRole`,
 and the external ID does not identify or authenticate a human. The caller's
 identity policy, its permissions boundary, applicable SCPs, and explicit denies
 must independently permit the request.
@@ -399,8 +402,8 @@ event ID, and policy layer that explains each result.
 ### Happy path: correct external ID
 
 Predict the result before running the command. The request should succeed
-because the caller matches `source_operator_role_arn`, its identity policy and
-boundary permit assumption of the Week 2 role, and the supplied external ID
+because the caller matches the `aws:PrincipalArn` role-path condition, its
+identity policy and boundary permit assumption of the Week 2 role, and the supplied external ID
 matches the role trust-policy condition.
 
 ```bash
@@ -511,18 +514,93 @@ should be broadened; use a read-only inspection session or the CLI instead.
 
 ## Evidence and security analysis
 
-Record the exact expected decision before each test. Explain the result using
-this order:
+Reload the exact role ARN, then retrieve the role configuration that governed
+all three `AssumeRole` tests:
 
-```text
-Explicit deny → SCP/RCP → identity policy → boundary/session policy
-             → resource/trust policy → conditions → effective result
+```bash
+export EXERCISE3_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise3 output -raw role_arn)"
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise3Role \
+  --query 'Role.{Arn:Arn,Path:Path,Boundary:PermissionsBoundary.PermissionsBoundaryArn,Trust:AssumeRolePolicyDocument}' \
+  --output json \
+  --no-cli-pager
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+Look for path `/week2/exercise3/`, boundary suffix
+`:policy/week2/WorkloadLabRoleBoundary`, the exact
+`AWSReservedSSO_WorkloadLabAdministrator_...` principal, action
+`sts:AssumeRole`, and `StringEquals` condition on `sts:ExternalId`. The expected
+external-ID value can appear in the trust policy and must be treated as an
+identifier, not a credential.
+
+Retrieve the role's identity policy and active boundary version:
+
+```bash
+aws iam get-role-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise3Role \
+  --policy-name Exercise3Policy \
+  --query PolicyDocument.Statement \
+  --output json \
+  --no-cli-pager
+
+export EXERCISE3_BOUNDARY_ARN="$(aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise3Role \
+  --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' \
+  --output text \
+  --no-cli-pager)"
+export EXERCISE3_BOUNDARY_VERSION="$(aws iam get-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --policy-arn "$EXERCISE3_BOUNDARY_ARN" \
+  --query 'Policy.DefaultVersionId' \
+  --output text \
+  --no-cli-pager)"
+aws iam get-policy-version \
+  --profile "$TF_VAR_source_aws_profile" \
+  --policy-arn "$EXERCISE3_BOUNDARY_ARN" \
+  --version-id "$EXERCISE3_BOUNDARY_VERSION" \
+  --query PolicyVersion.Document.Statement \
+  --output json \
+  --no-cli-pager
+```
+
+The inline policy should allow only `sts:GetCallerIdentity`. The boundary should
+permit assumption of Week 2 roles, but neither policy replaces the target
+role's external-ID trust condition.
+
+Retrieve the CloudTrail management events produced by the correct, missing,
+and incorrect external-ID requests:
+
+```bash
+aws cloudtrail lookup-events \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole \
+  --query "Events[?contains(CloudTrailEvent, 'Week2Exercise3Role')].[EventTime,EventId,CloudTrailEvent]" \
+  --output json \
+  --no-cli-pager
+```
+
+Use `requestParameters.roleSessionName` to distinguish
+`exercise3-happy`, `exercise3-missing-external-id`, and
+`exercise3-incorrect-external-id`. Confirm all events target the same role and
+source principal. The happy event should have no `errorCode` and should contain
+`responseElements.assumedRoleUser.arn`; both negative events should show
+`AccessDenied`. Record event IDs and times. If an event is absent, verify the
+Region and time window rather than treating absence as a denial.
+
+| Test | External-ID context | Expected event outcome | Determining layer |
+|---|---|---|---|
+| Correct value | Matches `sts:ExternalId` | Success; assumed-role ARN present | Trust condition matches. |
+| Missing value | Context key absent | `AccessDenied` | Conditional trust Allow does not apply. |
+| Incorrect value | Context key differs | `AccessDenied` | `StringEquals` fails. |
+
+Explain the results by holding the principal, role, source permission, and
+boundary constant. Only the external-ID request context changes. An external ID
+mitigates cross-customer confused-deputy requests but does not authenticate the
+third party or replace source-side authorization.
 
 ## Clean up
 

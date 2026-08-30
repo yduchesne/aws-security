@@ -482,10 +482,18 @@ See [`identity_center_security.md`](identity_center_security.md) for the detaile
 | `WorkloadProductionOperators` | `WorkloadProductionOperator` | Approved Prod accounts only |
 | `WorkloadLabAdministrators` | `WorkloadLabAdministrator` | Explicitly allowlisted Dev Lab and Test Lab accounts only |
 
-`WorkloadLabAdministrator` permits bounded Week 2 IAM, S3, and STS lab work.
+`WorkloadLabAdministrator` permits bounded Week 2 IAM, S3, STS, and narrowly
+scoped Exercise 8 EC2 lab work.
 Every role it creates must use the pre-provisioned `WorkloadLabRoleBoundary`;
 the persona cannot create, alter, replace, or remove that ceiling. Trusted
 baseline automation owns the boundary policy in each lab account.
+
+The permission set also grants read-only cross-account S3 access to the Dev Lab
+and Test Lab prefixes in the dedicated Log Archive evidence bucket. The bucket
+policy independently requires the corresponding
+`AWSReservedSSO_WorkloadLabAdministrator_*` role pattern. Lab users receive no
+Log Archive account assignment and cannot write, delete, or administer evidence
+or the customer-managed trail. See [`cloud-trail-logs.md`](cloud-trail-logs.md).
 
 The test users intentionally have no Terraform-managed memberships or direct assignments. They are manually activated and operated for console testing; temporary access must be documented, must exclude the management and AFT accounts, and must be removed immediately after testing.
 

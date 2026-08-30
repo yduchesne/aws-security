@@ -17,6 +17,8 @@ evidence, and remove only disposable resources.
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
+  - [Happy path: instance role reads the approved object](#happy-path-instance-role-reads-the-approved-object).
+  - [Unhappy path: instance role cannot read the unrelated object](#unhappy-path-instance-role-cannot-read-the-unrelated-object).
 - [Investigating in the Console](#investigating-in-the-console).
 - [Evidence and security analysis](#evidence-and-security-analysis).
 - [Clean up](#clean-up).
@@ -75,47 +77,49 @@ The global environment must be sourced first because the exercise file refers
 to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 `TF_MANAGEMENT_ACCOUNT_ID`, and `TF_HOME_REGION`.
 
-The exercise state owns only resources under `/week2/exercise8/` and the
-explicit fixture resources described by the objective. Existing Control Tower,
+The exercise state owns `Week2Exercise8Role`, its instance profile, one
+no-ingress security group, one disposable EC2 instance, and a versioned S3
+bucket containing an approved and a denied test object. Existing Control Tower,
 Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+ownership boundary. The workload role trusts only the EC2 service; the human
+`WorkloadLabAdministrator` deploys the fixture but cannot assume the workload
+role directly.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The workload role trusts EC2 and grants access to only one object:
 
 ```hcl
-resource "aws_iam_role_policy" "exercise" {
-  role = aws_iam_role.exercise.id
-  name = "Exercise8Policy"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["sts:GetCallerIdentity"]
-      Resource = "*"
-    }]
-  })
+assume_role_policy = jsonencode({
+  Version = "2012-10-17"
+  Statement = [{
+    Sid       = "AllowEC2WorkloadIdentity"
+    Effect    = "Allow"
+    Principal = { Service = "ec2.amazonaws.com" }
+    Action    = "sts:AssumeRole"
+  }]
+})
+```
+
+```hcl
+{
+  Sid      = "ReadOnlyApprovedObject"
+  Effect   = "Allow"
+  Action   = "s3:GetObject"
+  Resource = aws_s3_object.allowed.arn
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise8/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
-policy is not a substitute for an identity Allow.
-
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
-`sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise8/main.tf).
+The trust policy permits the EC2 service—not the human operator—to obtain a
+session through `Week2Exercise8InstanceProfile`. The identity policy allows
+`sts:GetCallerIdentity` and `s3:GetObject` only for
+`exercise8/allowed.txt`. The boundary permits S3 reads under the lab prefix but
+does not grant them; the identity policy narrows effective access to one object.
+`exercise8/denied.txt` exists in the same bucket, so its failed read proves
+resource-level authorization rather than a missing bucket or network failure.
+No static access key is placed in user data or on the instance.
 
 ### Permissions-boundary excerpt
 
@@ -175,23 +179,37 @@ it from this exercise.
 
 #### Boundary analysis
 
-This boundary is associated with any role to which the baseline attaches it.
-It allows only the listed `sts:AssumeRole`, identity-verification, and Week 2
-S3 operations within the two lab accounts and configured bucket prefix. It
-intentionally does not allow arbitrary IAM administration, user or access-key
-management, managed-policy creation, or unrestricted access to other services.
-Its weak point is that the ceiling still permits the listed role and S3 actions
-when a separate identity policy grants them; a boundary cannot prevent an
-identity policy from granting an action that the boundary allows. The baseline
-owner must therefore protect both the boundary and the policies attached to
-bounded roles.
+The baseline-owned boundary is attached to `Week2Exercise8Role`. It permits
+identity checks and S3 operations under the approved lab prefix but grants
+nothing by itself. The role policy independently allows only the approved
+object. It excludes IAM administration and unrelated services from the EC2
+session even if the role policy were accidentally broadened.
 
 
 ## Configure, initialize, and validate
 
-Authenticate the configured IAM Identity Center profile and verify the account. See [`sso_auth.md`](../../../sso_auth.md) for user enablement, MFA, browser isolation, and CLI login guidance. For the Exercise 1 test users, use the **Create the AWS CLI profiles** section of [`exercise1-instructions.md`](../exercise1/exercise1-instructions.md).
+Deploy the tagged Dev Lab network foundation before planning Exercise 8:
 
 ```bash
+./tf.sh --phase lab-foundation --dry-run
+./tf.sh --phase lab-foundation --apply
+```
+
+Exercise 8 also adds narrowly scoped EC2, instance-profile, and `iam:PassRole`
+permissions to `WorkloadLabAdministrator`. Preserve the two lab account
+assignments and apply that central permission-set update before planning this
+root:
+
+```bash
+./tf.sh --phase identity-center --dry-run
+./tf.sh --phase identity-center --apply
+```
+
+Authenticate the configured profile and verify the Dev Lab account. See
+[`sso_auth.md`](../../../sso_auth.md) for MFA and browser isolation:
+
+```bash
+aws sso logout --profile "$TF_VAR_source_aws_profile"
 aws sso login --profile "$TF_VAR_source_aws_profile" --use-device-code --no-browser
 aws sts get-caller-identity --profile "$TF_VAR_source_aws_profile"
 terraform -chdir=terraform/lab/week2/exercise8 init \
@@ -202,71 +220,327 @@ terraform -chdir=terraform/lab/week2/exercise8 validate
 terraform -chdir=terraform/lab/week2/exercise8 plan
 ```
 
-Review the plan before applying. It must not modify organizational governance,
-Control Tower resources, Identity Center resources, or unrelated accounts.
-Stop for unexplained replacements or deletions.
+By default Terraform discovers the latest x86_64 Amazon Linux 2023 AMI and an
+available default subnet. Set `TF_VAR_ami_id` or `TF_VAR_subnet_id` only when
+that discovery is unsuitable. Review the plan for one bounded role and instance
+profile, one no-ingress security group, one `t3.micro` instance, and one
+approved-prefix bucket with two objects. It must not modify organizational
+governance, Control Tower, central Identity Center resources, or unrelated
+accounts. Stop for unexplained replacements or deletions.
 
 ## Execute the experiment
 
-Apply only the reviewed plan:
+Apply the reviewed plan and capture the instance ID:
 
 ```bash
 terraform -chdir=terraform/lab/week2/exercise8 apply
-echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise8 output -raw role_arn)"
+export EXERCISE8_INSTANCE_ID="$(terraform -chdir=terraform/lab/week2/exercise8 output -raw instance_id)"
+aws ec2 wait instance-status-ok \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --instance-ids "$EXERCISE8_INSTANCE_ID"
 ```
 
-Run the exercise-specific positive and negative tests from the objective. Keep
-an evidence table with: caller, action, resource, expected result, actual
-result, CloudTrail event ID, and the policy layer that explains it.
+The instance user data performs both tests with credentials supplied
+automatically by the instance profile. Retrieve console output with a bounded
+poll so boot delays cannot cause an infinite loop:
 
-```mermaid
-sequenceDiagram
-    participant C as Caller
-    participant AWS as AWS authorization
-    participant E as Exercise resource
-    C->>AWS: Request selected API action
-    AWS->>AWS: Evaluate all applicable policy layers
-    AWS->>E: Permit or reject request
-    AWS-->>C: Result and request metadata
+```bash
+export EXERCISE8_CONSOLE_OUTPUT=""
+for attempt in $(seq 1 30); do
+  EXERCISE8_CONSOLE_OUTPUT="$(aws ec2 get-console-output \
+    --profile "$TF_VAR_source_aws_profile" \
+    --region "$TF_HOME_REGION" \
+    --instance-id "$EXERCISE8_INSTANCE_ID" \
+    --latest \
+    --query Output \
+    --output text \
+    --no-cli-pager)"
+  if printf '%s\n' "$EXERCISE8_CONSOLE_OUTPUT" | grep -q 'EXERCISE8_END'; then
+    break
+  fi
+  sleep 10
+done
+printf '%s\n' "$EXERCISE8_CONSOLE_OUTPUT"
 ```
 
-For Exercise 8, the central comparison is: **Use an instance profile and temporary credentials instead of keys.** Do
-not add permissions until the current policy evaluation and CloudTrail evidence
-have been documented.
+### Happy path: instance role reads the approved object
+
+Look for `IDENTITY`, an ARN containing
+`assumed-role/Week2Exercise8Role/`, `HAPPY_PATH`, and:
+
+```text
+EC2 instance-profile access succeeded.
+```
+
+This proves the EC2 workload received a temporary role session and successfully
+called `GetObject` for `exercise8/allowed.txt`.
+
+### Unhappy path: instance role cannot read the unrelated object
+
+Look for `UNHAPPY_PATH`, an S3 `AccessDenied` or `Forbidden` response for
+`exercise8/denied.txt`, followed by:
+
+```text
+EXPECTED_DENIED_OBJECT_READ_FAILED
+```
+
+If `UNEXPECTED_DENIED_OBJECT_READ_SUCCEEDED` appears, stop and inspect the role
+policy and boundary. Both objects exist in the same bucket; only the object ARN
+in the identity policy differs.
 
 ## Investigating in the Console
 
-Use IAM Identity Center access-portal sessions, not IAM user keys. Verify the
-account ID in the console account menu before inspecting anything.
+Use the Dev Lab `WorkloadLabAdministrator` session and verify the account ID and
+`TF_HOME_REGION`.
 
-1. Open **IAM** and inspect the exercise role under `/week2/exercise8/`.
-2. Review its trust relationship, identity policies, tags, and permissions
-   boundary where present.
-3. Open the relevant resource service and verify the resource ARN, tags,
-   ownership controls, or resource policy.
-4. In **CloudTrail → Event history**, filter for the API action under test and
-   compare the principal, resource, request parameters, and error code.
-5. From an approved management-account session, inspect inherited SCPs without
-   modifying them.
+1. Go to **IAM → Roles → Week2Exercise8Role**. Under **Trust relationships**,
+   verify `Principal.Service` is `ec2.amazonaws.com`; no human or account
+   principal should appear.
+2. Under **Permissions**, open inline policy
+   `Exercise8ReadOnlyApprovedObject`. Verify `ReadOnlyApprovedObject` permits
+   `s3:GetObject` only on the ARN ending in
+   `/exercise8/allowed.txt`. Confirm `exercise8/denied.txt` is absent.
+3. Under **Permissions boundary**, open `WorkloadLabRoleBoundary` and verify its
+   ARN ends with `policy/week2/WorkloadLabRoleBoundary`. It is the maximum
+   ceiling, not the one-object grant.
+4. Go to **IAM → Instance profiles** and open
+   `Week2Exercise8InstanceProfile`. Verify it contains only
+   `Week2Exercise8Role`.
+5. Go to **EC2 → Instances → Week2Exercise8Instance**. On **Security**, verify
+   the attached role/profile and `Week2Exercise8NoIngress` security group with
+   no inbound rules. Under **Actions → Monitor and troubleshoot → Get system
+   log**, find `EXERCISE8_BEGIN`, the assumed-role ARN, the successful approved
+   object text, the denied-object error, and `EXERCISE8_END`.
+6. On the instance **Details** tab, verify **IMDSv2** is required. No static
+   access key should appear in user data, tags, or instance metadata settings.
+7. Go to **S3 → Buckets**, open the bucket returned by the `bucket_name` output,
+   and confirm both `exercise8/allowed.txt` and `exercise8/denied.txt` exist.
+8. Go to **CloudTrail → Event history** and search for `RunInstances` using the
+   instance ID. Inspect `requestParameters.iamInstanceProfile` and the human
+   deployment principal. S3 `GetObject` calls are data events; retrieve them
+   from the project-owned evidence bucket as described below.
+9. Exercise 8 creates no SCP. If results differ, use an approved management
+   read session under **AWS Organizations → Dev Lab → Policies → Service control
+   policies** and inspect inherited Deny statements for `ec2:RunInstances`,
+   `iam:PassRole`, `sts:AssumeRole`, or `s3:GetObject`. Do not modify Control
+   Tower policies.
 
-Console list pages can require permissions outside a deliberately narrow lab
-role. An `AccessDenied` from a page is not evidence that the security policy
-should be broadened; use a read-only inspection session or the CLI instead.
+Do not add SSH or inbound rules to make inspection easier; console output and
+CloudTrail provide the required evidence.
 
 ## Evidence and security analysis
 
-Record the exact expected decision before each test. Explain the result using
-this order:
+The following subsections collect each configuration artifact separately. Preserve
+the command output with the redacted evidence.
 
-```text
-Explicit deny → SCP/RCP → identity policy → boundary/session policy
-             → resource/trust policy → conditions → effective result
+### Inspect the workload role trust and boundary
+
+```bash
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise8Role \
+  --query 'Role.{Arn:Arn,Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary.PermissionsBoundaryArn}' \
+  --output json --no-cli-pager
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+Look for a trust principal of `ec2.amazonaws.com` only and the approved
+`WorkloadLabRoleBoundary` ARN. Do not accept a human, account-root, or wildcard
+principal as equivalent workload trust.
+
+### Inspect the workload role identity policy
+
+```bash
+aws iam get-role-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise8Role \
+  --policy-name Exercise8ReadOnlyApprovedObject \
+  --query PolicyDocument.Statement \
+  --output json --no-cli-pager
+```
+
+Look for `s3:GetObject` on the exact `exercise8/allowed.txt` object ARN and no
+permission for `exercise8/denied.txt`, bucket-wide access, or write actions.
+
+### Inspect the instance profile
+
+```bash
+aws iam get-instance-profile \
+  --profile "$TF_VAR_source_aws_profile" \
+  --instance-profile-name Week2Exercise8InstanceProfile \
+  --output json --no-cli-pager
+```
+
+Look for exactly `Week2Exercise8Role` in the profile. The instance profile is
+the EC2 container; it is not itself the authorization policy.
+
+### Load the exercise outputs
+
+```bash
+export EXERCISE8_INSTANCE_ID="$(terraform -chdir=terraform/lab/week2/exercise8 output -raw instance_id)"
+export EXERCISE8_BUCKET_NAME="$(terraform -chdir=terraform/lab/week2/exercise8 output -raw bucket_name)"
+printf 'Instance: %s\\nBucket: %s\\n' "$EXERCISE8_INSTANCE_ID" "$EXERCISE8_BUCKET_NAME"
+```
+
+Confirm that the identifiers point to the disposable Exercise 8 fixture before
+running the remaining queries.
+
+### Inspect the EC2 instance configuration
+
+```bash
+aws ec2 describe-instances \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --instance-ids "$EXERCISE8_INSTANCE_ID" \
+  --query 'Reservations[].Instances[].{ArnProfile:IamInstanceProfile.Arn,Metadata:MetadataOptions,SecurityGroups:SecurityGroups,Subnet:SubnetId,PublicIp:PublicIpAddress,State:State.Name,Tags:Tags}' \
+  --output json --no-cli-pager
+```
+
+Look for the expected instance profile, `HttpTokens=required`, the tagged lab
+subnet, a temporary public IP, the no-ingress security group, and
+`Exercise=8` tags. The public IP is for outbound STS/S3 access only; do not add
+an inbound rule.
+
+### Inspect the boot-time workload-identity test
+
+Retrieve the complete boot-time test result:
+
+```bash
+aws ec2 get-console-output \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --instance-id "$EXERCISE8_INSTANCE_ID" \
+  --latest \
+  --query Output \
+  --output text \
+  --no-cli-pager
+```
+
+The same output must contain the assumed-role identity, successful approved
+object content, and `EXPECTED_DENIED_OBJECT_READ_FAILED`. This ties both tests
+to one workload session without exposing its credentials.
+
+### Inspect the EC2 deployment CloudTrail event
+
+Retrieve the deployment management event:
+
+```bash
+aws cloudtrail lookup-events \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances \
+  --query "Events[?contains(CloudTrailEvent, '$EXERCISE8_INSTANCE_ID')].[EventTime,EventId,CloudTrailEvent]" \
+  --output json --no-cli-pager
+```
+
+Look for the instance ID, `Week2Exercise8InstanceProfile`, instance type, subnet,
+security group, deployment principal, and no error code.
+
+### Retrieve the S3 data-event evidence
+
+Retrieve the S3 data events from the shared evidence bucket. The detailed
+architecture and troubleshooting rationale are in
+[`cloud-trail-logs.md`](../../../cloud-trail-logs.md), but run all of the
+following commands here.
+
+#### Load the authoritative evidence location
+
+First load the authoritative evidence bucket and organization ID from the
+initialized evidence root, then list the stable account-level CloudTrail
+prefix. Do not construct the path from the workstation date:
+
+```bash
+export EXERCISE8_EVIDENCE_BUCKET="$(terraform -chdir=terraform/lab/evidence output -raw evidence_bucket_name)"
+export EXERCISE8_ORGANIZATION_ID="$(terraform -chdir=terraform/lab/evidence output -raw organization_id)"
+export EXERCISE8_ACCOUNT_ID="$(aws sts get-caller-identity --profile "$TF_VAR_source_aws_profile" --query Account --output text)"
+export EXERCISE8_ACCOUNT_EVIDENCE_PREFIX="AWSLogs/$EXERCISE8_ORGANIZATION_ID/$EXERCISE8_ACCOUNT_ID/CloudTrail/"
+aws s3api list-objects-v2 \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE8_EVIDENCE_BUCKET" \
+  --prefix "$EXERCISE8_ACCOUNT_EVIDENCE_PREFIX" \
+  --query 'Contents[].{Key:Key,LastModified:LastModified,Size:Size}' \
+  --output table \
+  --no-cli-pager
+```
+
+#### Select the delivered log directory
+
+Select the directory containing the latest delivered log object:
+
+```bash
+export EXERCISE8_LATEST_LOG_KEY="$(aws s3api list-objects-v2 \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE8_EVIDENCE_BUCKET" \
+  --prefix "$EXERCISE8_ACCOUNT_EVIDENCE_PREFIX" \
+  --query 'sort_by(Contents,&LastModified)[-1].Key' \
+  --output text \
+  --no-cli-pager)"
+test -n "$EXERCISE8_LATEST_LOG_KEY"
+test "$EXERCISE8_LATEST_LOG_KEY" != "None"
+export EXERCISE8_EVIDENCE_PREFIX="${EXERCISE8_LATEST_LOG_KEY%/*}/"
+printf 'Selected evidence prefix: %s\n' "$EXERCISE8_EVIDENCE_PREFIX"
+```
+
+#### Download the delivered CloudTrail objects
+
+If unrelated activity produced a newer object, choose the Region/date directory
+from the preceding table that contains the test timestamps. Download only that
+CloudTrail directory:
+
+```bash
+export EXERCISE8_EVIDENCE_TMP="$(mktemp -d)"
+chmod 700 "$EXERCISE8_EVIDENCE_TMP"
+aws s3 cp \
+  "s3://$EXERCISE8_EVIDENCE_BUCKET/$EXERCISE8_EVIDENCE_PREFIX" \
+  "$EXERCISE8_EVIDENCE_TMP/" \
+  --profile "$TF_VAR_source_aws_profile" \
+  --recursive \
+  --exclude '*' \
+  --include '*.json.gz' \
+  --no-cli-pager
+```
+
+#### Filter the S3 data events
+
+Filter the downloaded records by bucket and exact object keys:
+
+```bash
+find "$EXERCISE8_EVIDENCE_TMP" -type f -name '*.json.gz' -print0 |
+  xargs -0 gzip -cd |
+  jq -c --arg bucket "$EXERCISE8_BUCKET_NAME" '
+    .Records[]
+    | select(.eventSource == "s3.amazonaws.com"
+        and .eventName == "GetObject"
+        and .requestParameters.bucketName == $bucket
+        and (.requestParameters.key == "exercise8/allowed.txt"
+          or .requestParameters.key == "exercise8/denied.txt"))
+    | {eventTime,eventID,principal:.userIdentity.arn,key:.requestParameters.key,errorCode,errorMessage}
+  '
+```
+
+Look for a successful event for `exercise8/allowed.txt` with no `errorCode` and
+an `AccessDenied` event for `exercise8/denied.txt`. Both must identify a
+`Week2Exercise8Role` session. Delivery is asynchronous; wait and retry the
+listing if no object follows the test time.
+Remove local evidence copies after preserving approved redacted records:
+
+```bash
+find "$EXERCISE8_EVIDENCE_TMP" -type f -delete
+find "$EXERCISE8_EVIDENCE_TMP" -depth -type d -empty -delete
+unset EXERCISE8_EVIDENCE_TMP EXERCISE8_EVIDENCE_BUCKET EXERCISE8_ORGANIZATION_ID
+unset EXERCISE8_ACCOUNT_ID EXERCISE8_ACCOUNT_EVIDENCE_PREFIX
+unset EXERCISE8_LATEST_LOG_KEY EXERCISE8_EVIDENCE_PREFIX
+```
+
+| Test | Credential source | Role policy resource | Expected outcome | Evidence |
+|---|---|---|---|---|
+| Approved object | EC2 instance profile | Exact approved object ARN | Success | Console output plus `GetObject` event without error. |
+| Denied object | Same temporary role session | ARN absent | `AccessDenied` | Console output plus denied `GetObject` event. |
+
+Explain that instance-profile credentials are temporary, automatically
+retrieved and rotated by the EC2 credential provider. The instance role still
+requires narrow trust, an identity grant, a boundary, and applicable SCP
+permission. No result justifies storing long-lived access keys on the host.
 
 ## Clean up
 
@@ -287,6 +561,9 @@ empty, remove temporary access, and verify `git status` before committing.
 - [IAM permissions boundaries](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html).
 - [IAM roles and trust policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html).
 - [IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html).
+- [IAM roles for Amazon EC2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html).
+- [Instance metadata credentials](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-metadata-security-credentials.html).
+- [Configure IMDSv2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html).
 - [AWS CloudTrail event history](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html).
 - [AWS STS](https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html).
 - [AWS IAM service authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html).

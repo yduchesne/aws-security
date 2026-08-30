@@ -35,9 +35,6 @@ variable "lab_role_boundary_path" {
   default     = "/week2/"
 }
 
-variable "source_operator_role_arn" {
-  type = string
-}
 variable "external_id" {
   type      = string
   sensitive = true

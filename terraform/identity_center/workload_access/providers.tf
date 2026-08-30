@@ -9,4 +9,5 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+data "aws_organizations_organization" "current" {}
 data "aws_ssoadmin_instances" "current" {}

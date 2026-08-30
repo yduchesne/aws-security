@@ -44,7 +44,3 @@ variable "target_aws_profile" {
   description = "IAM Identity Center-backed target account profile."
   type        = string
 }
-variable "source_operator_role_arn" {
-  description = "IAM Identity Center-provisioned source operator role ARN."
-  type        = string
-}

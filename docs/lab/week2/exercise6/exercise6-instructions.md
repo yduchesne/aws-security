@@ -223,8 +223,7 @@ Apply only the reviewed plan and capture its nonsensitive outputs:
 ```bash
 terraform -chdir=terraform/lab/week2/exercise6 apply
 export EXERCISE6_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw role_arn)"
-export EXERCISE6_ALPHA_URI="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw alpha_object_uri)"
-export EXERCISE6_BETA_URI="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw beta_object_uri)"
+export EXERCISE6_BUCKET_NAME="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw bucket_name)"
 ```
 
 Keep an evidence table with the role-session ARN, principal tag, object URI,
@@ -267,15 +266,24 @@ Prediction: `s3:GetObject` succeeds because the principal and object both have
 boundary also allows `s3:GetObject` within the approved bucket prefix.
 
 ```bash
-AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3 cp \
-  "$EXERCISE6_ALPHA_URI" - \
+export EXERCISE6_ALPHA_OUTPUT="$(mktemp)"
+if AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3api get-object \
   --profile week2-exercise6-alpha \
-  --no-cli-pager
+  --bucket "$EXERCISE6_BUCKET_NAME" \
+  --key exercise6/alpha.txt \
+  "$EXERCISE6_ALPHA_OUTPUT" \
+  --no-cli-pager; then
+  cat "$EXERCISE6_ALPHA_OUTPUT"
+else
+  echo "UNEXPECTED: Alpha GetObject was denied." >&2
+fi
+rm -f "$EXERCISE6_ALPHA_OUTPUT"
+unset EXERCISE6_ALPHA_OUTPUT
 ```
 
-Expected result: the command exits with status `0` and prints `Project Alpha
-test object.`. This is the positive authorization result for matching project
-attributes.
+Expected result: the direct `GetObject` command exits with status `0` and prints
+`Project Alpha test object.`. Using `s3api get-object` avoids the preliminary
+`HeadObject` request that the high-level `s3 cp` command may issue.
 
 ### Unhappy path: Alpha principal reads the Beta object
 
@@ -284,25 +292,30 @@ Beta object. The object's `Project=Beta` value does not equal the session's
 `Project=Alpha` principal tag, so the conditional Allow does not apply.
 
 ```bash
-if beta_result="$(AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3 cp \
-  "$EXERCISE6_BETA_URI" - \
+export EXERCISE6_BETA_OUTPUT="$(mktemp)"
+if beta_result="$(AWS_CONFIG_FILE="$EXERCISE6_AWS_CONFIG" aws s3api get-object \
   --profile week2-exercise6-alpha \
+  --bucket "$EXERCISE6_BUCKET_NAME" \
+  --key exercise6/beta.txt \
+  "$EXERCISE6_BETA_OUTPUT" \
   --no-cli-pager 2>&1)"; then
   echo "UNEXPECTED: Alpha principal read the Beta object: $beta_result" >&2
 else
   echo "$beta_result"
   case "$beta_result" in
-    *AccessDenied*) echo "Project tag mismatch was denied as expected." ;;
-    *) echo "UNEXPECTED: failure was not AccessDenied; do not count this as a valid negative test." >&2 ;;
+    *AccessDenied*|*Forbidden*) echo "Project tag mismatch was denied as expected." ;;
+    *) echo "UNEXPECTED: failure was not an S3 authorization denial." >&2 ;;
   esac
 fi
+rm -f "$EXERCISE6_BETA_OUTPUT"
+unset EXERCISE6_BETA_OUTPUT
 ```
 
-Expected result: S3 returns `AccessDenied`, the AWS CLI takes the `else` branch,
-and no object content is returned. An expired SSO login, missing object, wrong
-account, malformed URI, or network error is not a valid negative result. The
-caller, action, bucket, and role policy remain constant; only the object's
-`Project` tag differs.
+Expected result: the direct `GetObject` request returns `AccessDenied` or an
+HTTP 403 `Forbidden` authorization response, and no object content is returned.
+An expired SSO login, missing object, wrong account, malformed input, or network
+error is not a valid negative result. The caller, action, bucket, and role
+policy remain constant; only the object's `Project` tag differs.
 
 ### Remove the temporary CLI profile
 
@@ -312,8 +325,7 @@ evidence:
 
 ```bash
 rm -f "$EXERCISE6_AWS_CONFIG"
-unset EXERCISE6_AWS_CONFIG EXERCISE6_ROLE_ARN
-unset EXERCISE6_ALPHA_URI EXERCISE6_BETA_URI
+unset EXERCISE6_AWS_CONFIG EXERCISE6_ROLE_ARN EXERCISE6_BUCKET_NAME
 ```
 
 ```mermaid
@@ -338,8 +350,10 @@ Use IAM Identity Center access-portal sessions, not IAM user keys. Verify the
 account ID in the console account menu before inspecting anything.
 
 1. Open **IAM** and inspect the exercise role under `/week2/exercise6/`.
-2. Review its `Project=Alpha` tag, trust relationship, ABAC identity policy,
-   and attached `/week2/WorkloadLabRoleBoundary`.
+2. Review its `Project=Alpha` tag, ABAC identity policy, and attached
+   `/week2/WorkloadLabRoleBoundary`. In **Trust relationships**, verify the Dev
+   Lab account root is constrained by `aws:PrincipalArn` to the
+   `AWSReservedSSO_WorkloadLabAdministrator_*` role path.
 3. Open the S3 bucket and verify the Alpha and Beta object tags, encryption,
    versioning, and public-access block.
 4. In **CloudTrail → Event history**, filter for the API action under test and
@@ -353,18 +367,167 @@ should be broadened; use a read-only inspection session or the CLI instead.
 
 ## Evidence and security analysis
 
-Record the exact expected decision before each test. Explain the result using
-this order:
+Reload the exact role and bucket identifiers:
 
-```text
-Explicit deny → SCP/RCP → identity policy → boundary/session policy
-             → resource/trust policy → conditions → effective result
+```bash
+export EXERCISE6_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw role_arn)"
+export EXERCISE6_BUCKET_NAME="$(terraform -chdir=terraform/lab/week2/exercise6 output -raw bucket_name)"
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+Confirm the role ARN ends in
+`role/week2/exercise6/Week2Exercise6Role` and the bucket starts with the
+centrally configured Week 2 prefix.
+
+Retrieve the role tags, trust policy, and boundary:
+
+```bash
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise6Role \
+  --query 'Role.{Arn:Arn,Path:Path,Tags:Tags,Boundary:PermissionsBoundary.PermissionsBoundaryArn,Trust:AssumeRolePolicyDocument}' \
+  --output json \
+  --no-cli-pager
+```
+
+Look for `Project=Alpha`, path `/week2/exercise6/`, the
+`WorkloadLabRoleBoundary` ARN, and trust that combines the Dev Lab account root
+with an `aws:PrincipalArn` condition matching only the
+`AWSReservedSSO_WorkloadLabAdministrator_*` role path.
+
+Retrieve the ABAC identity policy:
+
+```bash
+aws iam get-role-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise6Role \
+  --policy-name Exercise6ProjectAbacPolicy \
+  --query PolicyDocument.Statement \
+  --output json \
+  --no-cli-pager
+```
+
+Find `ReadObjectsForMatchingProject`. Verify it allows `s3:GetObject` only in
+the exercise bucket and compares `s3:ExistingObjectTag/Project` with
+`${aws:PrincipalTag/Project}`. There is no explicit Deny; a mismatch prevents
+this conditional Allow from applying.
+
+Retrieve the two resource-tag values evaluated by the happy and unhappy paths:
+
+```bash
+aws s3api get-object-tagging \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE6_BUCKET_NAME" \
+  --key exercise6/alpha.txt \
+  --query TagSet \
+  --output json \
+  --no-cli-pager
+aws s3api get-object-tagging \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE6_BUCKET_NAME" \
+  --key exercise6/beta.txt \
+  --query TagSet \
+  --output json \
+  --no-cli-pager
+```
+
+The Alpha object must show `Project=Alpha`, matching the principal. The Beta
+object must show `Project=Beta`, isolating the one attribute that causes the
+negative result.
+
+Retrieve the successful role-assumption management event:
+
+```bash
+aws cloudtrail lookup-events \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole \
+  --query "Events[?contains(CloudTrailEvent, 'Week2Exercise6Role')].[EventTime,EventId,CloudTrailEvent]" \
+  --output json \
+  --no-cli-pager
+```
+
+Look for session name `exercise6-alpha`, the expected role ARN, and no
+`errorCode`. Record the event ID and time.
+
+`GetObject` is an S3 data event. Load the project-owned evidence destination
+and list the stable account-level prefix rather than deriving a directory from
+the workstation clock:
+
+```bash
+export EXERCISE6_EVIDENCE_BUCKET="$(terraform -chdir=terraform/lab/evidence output -raw evidence_bucket_name)"
+export EXERCISE6_ORGANIZATION_ID="$(terraform -chdir=terraform/lab/evidence output -raw organization_id)"
+export EXERCISE6_ACCOUNT_EVIDENCE_PREFIX="AWSLogs/$EXERCISE6_ORGANIZATION_ID/$TF_VAR_source_account_id/CloudTrail/"
+aws s3api list-objects-v2 \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE6_EVIDENCE_BUCKET" \
+  --prefix "$EXERCISE6_ACCOUNT_EVIDENCE_PREFIX" \
+  --query 'Contents[].{Key:Key,LastModified:LastModified,Size:Size}' \
+  --output table \
+  --no-cli-pager
+```
+
+Derive the Region/date directory from the latest delivered S3 key:
+
+```bash
+export EXERCISE6_LATEST_LOG_KEY="$(aws s3api list-objects-v2 \
+  --profile "$TF_VAR_source_aws_profile" \
+  --bucket "$EXERCISE6_EVIDENCE_BUCKET" \
+  --prefix "$EXERCISE6_ACCOUNT_EVIDENCE_PREFIX" \
+  --query 'sort_by(Contents,&LastModified)[-1].Key' \
+  --output text \
+  --no-cli-pager)"
+test -n "$EXERCISE6_LATEST_LOG_KEY"
+test "$EXERCISE6_LATEST_LOG_KEY" != "None"
+export EXERCISE6_EVIDENCE_PREFIX="${EXERCISE6_LATEST_LOG_KEY%/*}/"
+```
+
+If unrelated activity produced a newer file, choose the directory from the
+preceding table that corresponds to the test timestamps. Download that
+directory and filter the records:
+
+```bash
+export EXERCISE6_EVIDENCE_TMP="$(mktemp -d)"
+chmod 700 "$EXERCISE6_EVIDENCE_TMP"
+aws s3 cp \
+  "s3://$EXERCISE6_EVIDENCE_BUCKET/$EXERCISE6_EVIDENCE_PREFIX" \
+  "$EXERCISE6_EVIDENCE_TMP/" \
+  --profile "$TF_VAR_source_aws_profile" \
+  --recursive --exclude '*' --include '*.json.gz' --no-cli-pager
+find "$EXERCISE6_EVIDENCE_TMP" -type f -name '*.json.gz' -print0 |
+  xargs -0 gzip -cd |
+  jq -c --arg bucket "$EXERCISE6_BUCKET_NAME" '
+    .Records[]
+    | select(.eventSource == "s3.amazonaws.com"
+        and .eventName == "GetObject"
+        and .requestParameters.bucketName == $bucket
+        and (.requestParameters.key == "exercise6/alpha.txt"
+          or .requestParameters.key == "exercise6/beta.txt"))
+    | {eventTime,eventID,principal:.userIdentity.arn,key:.requestParameters.key,errorCode,errorMessage}
+  '
+```
+
+Look for `exercise6/alpha.txt` without an error code and
+`exercise6/beta.txt` with `AccessDenied`, both from the same
+`Week2Exercise6Role/exercise6-alpha` session. Delivery is asynchronous; wait and
+retry if no file follows the test timestamps. Remove local evidence copies
+after preserving approved redacted records:
+
+```bash
+find "$EXERCISE6_EVIDENCE_TMP" -type f -delete
+find "$EXERCISE6_EVIDENCE_TMP" -depth -type d -empty -delete
+unset EXERCISE6_EVIDENCE_TMP EXERCISE6_EVIDENCE_BUCKET
+unset EXERCISE6_ACCOUNT_EVIDENCE_PREFIX EXERCISE6_EVIDENCE_PREFIX
+unset EXERCISE6_LATEST_LOG_KEY EXERCISE6_ORGANIZATION_ID
+```
+
+| Test | Principal tag | Object tag | Expected outcome | Determining layer |
+|---|---|---|---|---|
+| Alpha object | `Project=Alpha` | `Project=Alpha` | Success | ABAC comparison matches. |
+| Beta object | `Project=Alpha` | `Project=Beta` | `AccessDenied` | Conditional Allow does not apply. |
+
+Explain why tag-mutation permissions are part of the security boundary. A
+principal that can alter its own authorization tags or the object's `Project`
+tag could defeat the intended project separation.
 
 ## Clean up
 

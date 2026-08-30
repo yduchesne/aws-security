@@ -25,6 +25,8 @@ AFT_ORG_UNIT_DIR="${SCRIPT_DIR}/terraform/aft/org_unit"
 AFT_ACCOUNT_DIR="${SCRIPT_DIR}/terraform/aft/account"
 AFT_PLATFORM_DIR="${SCRIPT_DIR}/terraform/aft/platform"
 WORKLOAD_ORG_UNITS_DIR="${SCRIPT_DIR}/terraform/workloads/org_units"
+LAB_EVIDENCE_DIR="${SCRIPT_DIR}/terraform/lab/evidence"
+LAB_FOUNDATION_DIR="${SCRIPT_DIR}/terraform/lab/foundation"
 
 ###############################################################################
 # Functions
@@ -32,12 +34,12 @@ WORKLOAD_ORG_UNITS_DIR="${SCRIPT_DIR}/terraform/workloads/org_units"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --phase <bootstrap|identity-center|aft|workloads> [OPTIONS]
+Usage: $(basename "$0") --phase <bootstrap|identity-center|lab-foundation|lab-evidence|aft|workloads> [OPTIONS]
 
 Run a Terraform phase for the AWS Control Tower landing zone.
 
 Required:
-  --phase PHASE  Phase to run: bootstrap, identity-center, aft, or workloads
+  --phase PHASE  Phase to run: bootstrap, identity-center, lab-foundation, lab-evidence, aft, or workloads
 
 Operations:
   --apply        Run 'terraform apply' in each selected Terraform root
@@ -59,10 +61,19 @@ The AFT phase runs these independent roots in order:
 The workloads phase runs terraform/workloads/org_units after bootstrap and
 before AFT account requests target the workload environment OUs.
 
+The lab-foundation phase runs terraform/lab/foundation after the Dev Lab account
+exists. It creates the tagged VPC and public subnet used by Exercise 8.
+
+The lab-evidence phase runs terraform/lab/evidence after bootstrap and Identity
+Center. It creates a separate S3-only organization trail and its Log Archive
+bucket without modifying the Control Tower-managed trail.
+
 Examples:
   $(basename "$0") --phase bootstrap --fmt
   $(basename "$0") --phase bootstrap --dry-run
   $(basename "$0") --phase identity-center --dry-run
+  $(basename "$0") --phase lab-foundation --dry-run
+  $(basename "$0") --phase lab-evidence --dry-run
   $(basename "$0") --phase aft --chk
   $(basename "$0") --phase aft --dry-run
   $(basename "$0") --phase workloads --dry-run
@@ -145,6 +156,12 @@ backend_bucket_for_root() {
     workload-org-units)
       printf '%s' "${TF_WORKLOAD_ORG_UNITS_STATE_BUCKET:-${TF_STATE_BUCKET:-}}"
       ;;
+    lab-evidence)
+      printf '%s' "${TF_LAB_EVIDENCE_STATE_BUCKET:-${TF_STATE_BUCKET:-}}"
+      ;;
+    lab-foundation)
+      printf '%s' "${TF_LAB_FOUNDATION_STATE_BUCKET:-${TF_STATE_BUCKET:-}}"
+      ;;
     *)
       die "Unknown Terraform root name '${root_name}'."
       ;;
@@ -178,6 +195,12 @@ backend_region_for_root() {
       ;;
     workload-org-units)
       printf '%s' "${TF_WORKLOAD_ORG_UNITS_STATE_REGION:-${TF_STATE_REGION:-}}"
+      ;;
+    lab-evidence)
+      printf '%s' "${TF_LAB_EVIDENCE_STATE_REGION:-${TF_STATE_REGION:-}}"
+      ;;
+    lab-foundation)
+      printf '%s' "${TF_LAB_FOUNDATION_STATE_REGION:-${TF_STATE_REGION:-}}"
       ;;
     *)
       die "Unknown Terraform root name '${root_name}'."
@@ -330,6 +353,27 @@ run_workloads_phase() {
   run_terraform_root workload-org-units "$WORKLOAD_ORG_UNITS_DIR"
 }
 
+run_lab_foundation_phase() {
+  local prerequisite_script="${LAB_FOUNDATION_DIR}/load-prerequisite-env.sh"
+
+  [[ -f "$prerequisite_script" ]] || die "Prerequisite script not found: ${prerequisite_script}"
+  log "Loading prerequisites for lab/foundation"
+  # shellcheck disable=SC1090
+  source "$prerequisite_script"
+  run_terraform_root lab-foundation "$LAB_FOUNDATION_DIR"
+}
+
+run_lab_evidence_phase() {
+  local prerequisite_script="${LAB_EVIDENCE_DIR}/load-prerequisite-env.sh"
+
+  [[ -f "$prerequisite_script" ]] || die "Prerequisite script not found: ${prerequisite_script}"
+  load_control_tower_shared_account_ids
+  log "Loading prerequisites for lab/evidence"
+  # shellcheck disable=SC1090
+  source "$prerequisite_script"
+  run_terraform_root lab-evidence "$LAB_EVIDENCE_DIR"
+}
+
 run_aft_phase() {
   local prerequisite_script
 
@@ -378,7 +422,7 @@ run_aft_phase() {
 while (($#)); do
   case "$1" in
     --phase)
-      (($# >= 2)) || die "--phase requires a value: bootstrap, identity-center, aft, or workloads."
+      (($# >= 2)) || die "--phase requires a value: bootstrap, identity-center, lab-foundation, lab-evidence, aft, or workloads."
       PHASE="$2"
       shift 2
       ;;
@@ -412,8 +456,8 @@ while (($#)); do
   esac
 done
 
-[[ "$PHASE" == "bootstrap" || "$PHASE" == "identity-center" || "$PHASE" == "aft" || "$PHASE" == "workloads" ]] ||
-  die "--phase must be set to 'bootstrap', 'identity-center', 'aft', or 'workloads'."
+[[ "$PHASE" == "bootstrap" || "$PHASE" == "identity-center" || "$PHASE" == "lab-foundation" || "$PHASE" == "lab-evidence" || "$PHASE" == "aft" || "$PHASE" == "workloads" ]] ||
+  die "--phase must be set to 'bootstrap', 'identity-center', 'lab-foundation', 'lab-evidence', 'aft', or 'workloads'."
 
 if [[ "$APPLY" == true && "$DRY_RUN" == true ]]; then
   die "--apply and --dry-run are mutually exclusive."
@@ -451,5 +495,11 @@ case "$PHASE" in
     ;;
   workloads)
     run_workloads_phase
+    ;;
+  lab-foundation)
+    run_lab_foundation_phase
+    ;;
+  lab-evidence)
+    run_lab_evidence_phase
     ;;
 esac
