@@ -448,6 +448,12 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = "*"
       },
       {
+        Sid      = "ValidateIamPolicies"
+        Effect   = "Allow"
+        Action   = "access-analyzer:ValidatePolicy"
+        Resource = "*"
+      },
+      {
         Sid      = "CreateBoundedLabRoles"
         Effect   = "Allow"
         Action   = "iam:CreateRole"

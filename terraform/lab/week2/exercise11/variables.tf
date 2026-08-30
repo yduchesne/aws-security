@@ -24,11 +24,14 @@ variable "common_tags" {
   }
 }
 
-variable "target_account_id" {
-  description = "Dev/Test lab target account ID used by the exercise context."
+variable "lab_role_boundary_name" {
   type        = string
+  description = "The name of the IAM policy to use as a permissions boundary."
+  default     = "WorkloadLabRoleBoundary"
 }
-variable "target_aws_profile" {
-  description = "IAM Identity Center-backed target account profile."
+
+variable "lab_role_boundary_path" {
   type        = string
+  description = "The path of the IAM policy to use as a permissions boundary."
+  default     = "/week2/"
 }
