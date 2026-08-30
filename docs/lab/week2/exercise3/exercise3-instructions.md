@@ -195,7 +195,9 @@ ownership of the policy to this state.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The following excerpt is the complete identity policy created for this
+exercise. It is taken from the authoritative declaration in
+[`main.tf`](../../../../terraform/lab/week2/exercise3/main.tf):
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -212,14 +214,15 @@ resource "aws_iam_role_policy" "exercise" {
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise3/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
+Before applying, inspect
+[`main.tf`](../../../../terraform/lab/week2/exercise3/main.tf) and record the
+policy's principal, actions, resources, conditions, and any explicit denies.
+A permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
+This is the complete identity policy created for `Week2Exercise3Role`. Its
 principal is the role itself, and its only Allow is the harmless
 `sts:GetCallerIdentity` action on all resources. It is intended to permit
 identity verification, not access to arbitrary workload resources. It does not
@@ -227,8 +230,9 @@ trust any principal; trust is defined separately by the role's assume-role
 policy. It intentionally contains no explicit Deny, so the absence of an Allow
 for other actions produces an implicit deny. The wildcard resource is a weak
 point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise3/main.tf).
+provide a narrower resource scope. Compare this excerpt with the role trust
+policy below; the complete declaration remains in
+[`main.tf`](../../../../terraform/lab/week2/exercise3/main.tf).
 
 ### Trust-policy excerpt
 
