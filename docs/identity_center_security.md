@@ -53,8 +53,11 @@ administration.
 
 `WorkloadLabAdministrator` is a one-hour bounded lab persona. It can manage
 only Week 2-path roles carrying the pre-provisioned
-`WorkloadLabRoleBoundary`, named lab S3 buckets, approved cross-account STS role
-assumptions, and narrowly scoped Exercise 8 EC2 resources. Exercise 8 permits
+`WorkloadLabRoleBoundary`, named lab S3 buckets and their policies, the fixed
+Exercise 10 Access Analyzer, approved cross-account STS role assumptions, and
+narrowly scoped Exercise 8 EC2 resources. Exercise 10 analyzer creation is
+restricted by the required request tag and analyzer lifecycle operations are
+restricted to the fixed analyzer ARN pattern. Exercise 8 permits
 only small instance types, bounded roles and instance profiles under
 `/week2/exercise8/`, EC2-only `iam:PassRole`, no-ingress security groups, and
 tag-scoped termination. It also has read-only access to the project-owned lab

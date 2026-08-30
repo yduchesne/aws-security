@@ -199,6 +199,10 @@ locals {
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*",
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*/*",
   ]
+  lab_exercise10_analyzer_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:access-analyzer:*:${account_id}:analyzer/Week2Exercise10Analyzer"
+  ]
   lab_evidence_bucket_name = "aws-security-lab-evidence-${var.management_account_id}"
   lab_evidence_bucket_arn  = "arn:${data.aws_partition.current.partition}:s3:::${local.lab_evidence_bucket_name}"
   lab_evidence_prefixes = [
@@ -509,14 +513,84 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = "*"
       },
       {
+        Sid    = "ReadExercise10AccessAnalyzer"
+        Effect = "Allow"
+        Action = [
+          "access-analyzer:GetAnalyzer",
+          "access-analyzer:GetFinding",
+          "access-analyzer:ListArchiveRules",
+          "access-analyzer:ListFindings",
+          "access-analyzer:ListTagsForResource",
+        ]
+        Resource = local.lab_exercise10_analyzer_arns
+      },
+      {
+        Sid    = "ListExercise10AccessAnalyzers"
+        Effect = "Allow"
+        Action = [
+          "access-analyzer:ListAnalyzers",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ManageExercise10AccessAnalyzer"
+        Effect = "Allow"
+        Action = [
+          "access-analyzer:CreateAnalyzer",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/Name" = "Week2Exercise10Analyzer"
+          }
+        }
+      },
+      {
+        Sid    = "ManageExercise10AccessAnalyzerResource"
+        Effect = "Allow"
+        Action = [
+          "access-analyzer:DeleteAnalyzer",
+          "access-analyzer:GetAnalyzer",
+          "access-analyzer:TagResource",
+          "access-analyzer:UntagResource",
+        ]
+        Resource = local.lab_exercise10_analyzer_arns
+      },
+      {
+        Sid    = "AllowAccessAnalyzerServiceLinkedRole"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "access-analyzer.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "DenyOtherServiceLinkedRoles"
+        Effect = "Deny"
+        Action = [
+          "iam:CreateServiceLinkedRole",
+        ]
+        Resource = "*"
+        Condition = {
+          StringNotEquals = {
+            "iam:AWSServiceName" = "access-analyzer.amazonaws.com"
+          }
+        }
+      },
+      {
         Sid    = "ManageNamedLabBuckets"
         Effect = "Allow"
         Action = [
           "s3:CreateBucket",
           "s3:DeleteBucket",
+          "s3:DeleteBucketPolicy",
           "s3:DeleteBucketEncryption",
           "s3:DeleteBucketOwnershipControls",
-          "s3:DeleteBucketPolicy",
           "s3:DeleteBucketPublicAccessBlock",
           "s3:DeleteBucketTagging",
           "s3:DeleteBucketWebsite",
@@ -546,6 +620,7 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
           "s3:ListBucket",
           "s3:ListBucketVersions",
           "s3:PutBucketOwnershipControls",
+          "s3:PutBucketPolicy",
           "s3:PutBucketPublicAccessBlock",
           "s3:PutBucketTagging",
           "s3:PutBucketVersioning",
@@ -711,7 +786,6 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
           "iam:CreatePolicy",
           "iam:CreatePolicyVersion",
           "iam:CreateSAMLProvider",
-          "iam:CreateServiceLinkedRole",
           "iam:CreateUser",
           "iam:DeleteRolePermissionsBoundary",
           "iam:PutGroupPolicy",
