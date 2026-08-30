@@ -15,6 +15,7 @@ evidence, and remove only disposable resources.
 - [Terraform configuration and ownership](#terraform-configuration-and-ownership).
   - [Policy/resource excerpt](#policyresource-excerpt).
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
+  - [SCP excerpt](#scp-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
 - [Investigating in the Console](#investigating-in-the-console).
@@ -206,6 +207,56 @@ when a separate identity policy grants them; a boundary cannot prevent an
 identity policy from granting an action that the boundary allows. The baseline
 owner must therefore protect both the boundary and the policies attached to
 bounded roles.
+
+### SCP excerpt
+
+Unlike the other Week 2 exercises, this exercise creates one SCP of its own:
+`Week2Exercise13DenyS3ObjectWrites`, attached directly to the Dev Lab account
+by the exercise Terraform root. The authoritative declaration is in
+[`main.tf`](../../../../terraform/lab/week2/exercise13/main.tf); the excerpt
+below shortens the resource block, so open the linked file for the `tags` and
+`check` blocks:
+
+```hcl
+resource "aws_organizations_policy" "exercise_scp_deny" {
+  count    = var.scp_deny_enabled ? 1 : 0
+  provider = aws.management
+
+  name        = "Week2Exercise13DenyS3ObjectWrites"
+  description = "Week 2 Exercise 13 disposable fixture: explicit SCP deny overriding an identity allow. Safe to delete."
+  type        = "SERVICE_CONTROL_POLICY"
+  content = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ExplicitDenyExercise13BucketObjectWrites"
+      Effect   = "Deny"
+      Action   = var.scp_deny_actions
+      Resource = ["${aws_s3_bucket.exercise.arn}/*"]
+    }]
+  })
+}
+```
+
+#### SCP analysis
+
+An SCP answers: what maximum permissions are available to member-account
+principals? This statement is an explicit `Deny` for the actions in
+`scp_deny_actions` (defaulting to `s3:PutObject`) on the exercise bucket's
+object ARN only. Attached directly to the Dev Lab account, it overrides every
+applicable Allow — including the `AllowExercise13BucketAccess` identity Allow
+in `Exercise13Policy` and the boundary ceiling — because an explicit deny
+always wins. The deny is deliberately action- and resource-scoped: other S3
+actions on the same bucket (such as `s3:ListBucket`) and operations on other
+resources remain governed by the remaining policy layers. The `count` toggle
+means the SCP and its attachment exist only while `TF_VAR_scp_deny_enabled`
+is `true`. Its weak points: an SCP does not constrain principals in the
+management account (one reason the tested role lives in the Dev Lab account),
+SCP changes are near-immediate but eventually consistent, and if workload
+principals could call `organizations:AttachPolicy` or
+`organizations:DetachPolicy`, they could remove the very guardrail that
+constrains them. This exercise owns only the named fixture and its
+attachment; do not modify Control Tower or organization policies from this
+exercise.
 
 
 ## Configure, initialize, and validate

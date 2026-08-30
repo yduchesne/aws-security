@@ -15,6 +15,7 @@ evidence, and remove only disposable resources.
 - [Terraform configuration and ownership](#terraform-configuration-and-ownership).
   - [Policy/resource excerpt](#policyresource-excerpt).
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
+  - [SCP excerpt](#scp-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
 - [Investigating in the Console](#investigating-in-the-console).
@@ -86,40 +87,180 @@ failures remain part of the troubleshooting exercise.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The excerpts below are the policies this exercise creates; they are taken
+from the authoritative declarations in
+[`main.tf`](../../../../terraform/lab/week2/exercise15/main.tf) and shortened
+only where noted. A permissions boundary is a maximum, not a grant; a resource
+policy or trust policy is not a substitute for an identity Allow, and an
+identity Allow is not a substitute for trust.
+
+#### Source identity policies
+
+The working caller and the untrusted caller share `Exercise15AssumeTargets`,
+which allows assuming exactly the three Test Lab target roles:
 
 ```hcl
-resource "aws_iam_role_policy" "exercise" {
-  role = aws_iam_role.exercise.id
-  name = "Exercise15Policy"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["sts:GetCallerIdentity"]
-      Resource = "*"
-    }]
-  })
+data "aws_iam_policy_document" "caller_assume_targets" {
+  provider = aws.source
+
+  statement {
+    sid       = "AssumeOnlyExercise15Targets"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = local.target_role_arns
+  }
+
+  statement {
+    sid       = "ReadCurrentIdentity"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise15/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
-policy is not a substitute for an identity Allow.
+The `Ex15CallerWithoutAssumeRole` role instead receives `Exercise15Policy`,
+which has no `sts:AssumeRole` Allow — this is the source identity-policy
+failure (Failure A):
 
-#### Policy/resource analysis
+```hcl
+data "aws_iam_policy_document" "caller_identity_only" {
+  provider = aws.source
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
-`sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise15/main.tf).
+  statement {
+    sid       = "ReadCurrentIdentity"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+```
+
+These identity policies answer what each caller may request: assuming only
+the named Exercise 15 target roles and verifying its own identity. Any other
+request receives an implicit deny because no Allow matches it. Because the
+untrusted caller holds the same Allow as the working caller, Failure B cannot
+be attributed to the source identity policy — the difference is the target
+trust. The `resources = ["*"]` on `sts:GetCallerIdentity` is a readability
+weak point; that action does not support a narrower resource scope. The
+`AssumeOnlyExercise15Targets` resources rely on `local.target_role_arns`, so
+compare the excerpt with the complete declaration in
+[`main.tf`](../../../../terraform/lab/week2/exercise15/main.tf) for the
+exact ARNs.
+
+#### Target trust policies
+
+The three Test Lab target roles carry the trust policies that determine
+Failures B, D, and E. The baseline target trusts only the working caller
+role:
+
+```hcl
+data "aws_iam_policy_document" "target_trust" {
+  provider = aws.target
+
+  statement {
+    sid     = "TrustOnlyApprovedSourceRole"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.caller.arn]
+    }
+  }
+}
+```
+
+The ExternalId target adds a mandatory `sts:ExternalId` condition:
+
+```hcl
+data "aws_iam_policy_document" "external_id_trust" {
+  provider = aws.target
+
+  statement {
+    sid     = "TrustApprovedSourceRoleWithExternalId"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.caller.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "sts:ExternalId"
+      values   = [var.external_id]
+    }
+  }
+}
+```
+
+The condition target names the same trusted principal but requires an
+intentionally unmatched `aws:PrincipalArn` pattern:
+
+```hcl
+data "aws_iam_policy_document" "condition_trust" {
+  provider = aws.target
+
+  statement {
+    sid     = "TrustRoleWithMismatchedCondition"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.caller.arn]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:PrincipalArn"
+      values   = [local.expected_condition_role_pattern]
+    }
+  }
+}
+```
+
+Each trust policy authorizes only the `sts:AssumeRole` action. The trusted
+principal is exactly `Ex15CallerRole`; every other principal — including
+`Ex15UntrustedCallerRole`, the operator SSO role, and principals in any other
+account — is intentionally distrusted and receives no Allow. Specific
+role-principal trust is deliberately narrower than account-root trust: a
+broader principal would let any principal in the source account attempt the
+assumption, so the failure could no longer be isolated to the trust layer.
+The ExternalId condition defends the target account against the
+confused-deputy problem: a caller that is the named principal and holds the
+right identity Allow still fails unless it supplies the configured
+`external_id`. The `expected_condition_role_pattern`
+(`role/week2/exercise15/ExpectedConditionRole*`) intentionally matches no
+deployed role, so Failure E fails on the condition alone even though the
+caller is the trusted principal. Weak points: trust conditions are only as
+strong as their values — a leaked ExternalId or a broad principal combined
+with a weak condition would widen the trust — and a trust policy never grants
+the target role's own permissions.
+
+#### Target probe policy
+
+All three target roles carry the same minimal probe policy
+(`Exercise15TargetProbe`):
+
+```hcl
+data "aws_iam_policy_document" "target_probe" {
+  provider = aws.target
+
+  statement {
+    sid       = "ReadCurrentIdentity"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+```
+
+This identity policy answers what an assumed target session may request:
+only identity verification. It is relevant only after a successful assumption
+and cannot make a denied `sts:AssumeRole` request succeed.
 
 ### Permissions-boundary excerpt
 
@@ -189,6 +330,51 @@ when a separate identity policy grants them; a boundary cannot prevent an
 identity policy from granting an action that the boundary allows. The baseline
 owner must therefore protect both the boundary and the policies attached to
 bounded roles.
+
+### SCP excerpt
+
+Failure C uses the exercise-owned SCP `Week2Exercise15DenyAssumeRole`, which
+exists and is attached only to the Dev Lab source account while
+`scp_deny_enabled` is `true`. The authoritative declaration is in
+[`main.tf`](../../../../terraform/lab/week2/exercise15/main.tf); the excerpt
+shortens the resource block, so open the linked file for the attachment and
+`check` blocks:
+
+```hcl
+resource "aws_organizations_policy" "exercise_scp_deny" {
+  count    = var.scp_deny_enabled ? 1 : 0
+  provider = aws.management
+
+  name        = "Week2Exercise15DenyAssumeRole"
+  description = "Week 2 Exercise 15 disposable fixture: SCP deny blocking cross-account sts:AssumeRole. Safe to delete."
+  type        = "SERVICE_CONTROL_POLICY"
+  content = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ExplicitDenyExercise15TargetAssumeRole"
+      Effect   = "Deny"
+      Action   = ["sts:AssumeRole"]
+      Resource = local.target_role_arns
+    }]
+  })
+}
+```
+
+#### SCP analysis
+
+An SCP answers: what maximum permissions are available to member-account
+principals? This statement explicitly denies `sts:AssumeRole` on exactly the
+three Exercise 15 target-role ARNs for principals in the Dev Lab source
+account. It is the layer that overrides the working caller's identity Allow
+and the target's trust Allow during Failure C, because an explicit deny wins
+over every applicable Allow. It is deliberately resource-scoped: assuming any
+other role from the source account is unaffected. Weak points: the SCP does
+not constrain principals in the management account, SCP changes are
+near-immediate but eventually consistent, and if a workload principal could
+manage `organizations:AttachPolicy` or `organizations:DetachPolicy`, it could
+remove the guardrail that constrains it. This exercise owns only the named
+fixture and its attachment; do not modify Control Tower or organization
+policies from this exercise.
 
 
 ## Configure, initialize, and validate
