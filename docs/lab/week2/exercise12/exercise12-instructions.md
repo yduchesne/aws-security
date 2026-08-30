@@ -30,6 +30,15 @@ intentionally broader permissions than the workflow uses, and inspect the
 resulting findings. You will then compare Access Analyzer results with the
 role's identity policy, permissions boundary, and CloudTrail activity.
 
+Tracking unused access matters because permissions that are granted but rarely
+or never exercised increase the blast radius of a compromised identity,
+misconfigured workload, or overly broad trust relationship. Stale permissions
+can expose additional services and resources to an attacker and make access
+reviews difficult: the policy shows what a principal *could* do, while normal
+activity shows only what it has actually done so far. Unused-access analysis
+helps identify concrete permissions and entities for a focused review instead
+of requiring administrators to infer risk from large policy documents alone.
+
 The exercise demonstrates how unused-access evidence can support a
 least-privilege review. It does not treat Access Analyzer as an automatic
 least-privilege decision or as proof that a permission should be removed. A
