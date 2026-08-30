@@ -79,7 +79,7 @@ locals {
     }
     lab_administrator = {
       name               = "WorkloadLabAdministrator"
-      description        = "Bounded IAM, S3, and STS administration for approved Week 2 lab exercises."
+      description        = "Bounded IAM, S3, STS, and narrowly scoped EC2 administration for approved Week 2 lab exercises."
       session_duration   = "PT1H"
       managed_policy_arn = null
     }
@@ -166,9 +166,48 @@ locals {
     for account_id in local.lab_account_ids :
     "arn:${data.aws_partition.current.partition}:iam::${account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
   ]
+  lab_exercise_instance_profile_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:iam::${account_id}:instance-profile/week*/exercise*/*"
+  ]
+  lab_exercise_role_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:iam::${account_id}:role/week*/exercise*/*"
+  ]
+  lab_oidc_provider_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:iam::${account_id}:oidc-provider/*"
+  ]
+  lab_ec2_vpc_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:vpc/*"
+  ]
+  lab_ec2_security_group_arns = [
+    for account_id in local.lab_account_ids :
+    "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:security-group/*"
+  ]
+  lab_ec2_resource_arns = flatten([
+    for account_id in local.lab_account_ids : [
+      "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:instance/*",
+      "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:network-interface/*",
+      "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:security-group/*",
+      "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:subnet/*",
+      "arn:${data.aws_partition.current.partition}:ec2:${var.home_region}:${account_id}:volume/*",
+    ]
+  ])
   lab_bucket_arns = [
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*",
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*/*",
+  ]
+  lab_evidence_bucket_name = "aws-security-lab-evidence-${var.management_account_id}"
+  lab_evidence_bucket_arn  = "arn:${data.aws_partition.current.partition}:s3:::${local.lab_evidence_bucket_name}"
+  lab_evidence_prefixes = [
+    for account_id in local.lab_account_ids :
+    "AWSLogs/${data.aws_organizations_organization.current.id}/${account_id}/*"
+  ]
+  lab_evidence_object_arns = [
+    for prefix in local.lab_evidence_prefixes :
+    "${local.lab_evidence_bucket_arn}/${prefix}"
   ]
 }
 
@@ -374,7 +413,6 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_baseline_administrator
           "iam:CreateGroup",
           "iam:CreateInstanceProfile",
           "iam:CreateLoginProfile",
-          "iam:CreateOpenIDConnectProvider",
           "iam:CreateRole",
           "iam:CreateSAMLProvider",
           "iam:CreateServiceLinkedRole",
@@ -519,6 +557,147 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = local.lab_bucket_arns
       },
       {
+        Sid    = "ManageLabExerciseOidcProviders"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateOpenIDConnectProvider",
+          "iam:DeleteOpenIDConnectProvider",
+          "iam:GetOpenIDConnectProvider",
+          "iam:TagOpenIDConnectProvider",
+          "iam:UntagOpenIDConnectProvider",
+        ]
+        Resource = local.lab_oidc_provider_arns
+      },
+      {
+        Sid    = "ManageLabExerciseInstanceProfiles"
+        Effect = "Allow"
+        Action = [
+          "iam:AddRoleToInstanceProfile",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UntagInstanceProfile",
+        ]
+        Resource = local.lab_exercise_instance_profile_arns
+      },
+      {
+        Sid      = "PassOnlyBoundedLabExerciseRolesToEC2"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = local.lab_exercise_role_arns
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ec2.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "ReadEC2ForLabExercises"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeImages",
+          "ec2:DescribeInstanceAttribute",
+          "ec2:DescribeInstanceCreditSpecifications",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeSecurityGroupRules",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeTags",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVpcs",
+          "ec2:GetConsoleOutput",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "LaunchLabExerciseInstances"
+        Effect = "Allow"
+        Action = "ec2:RunInstances"
+        # RunInstances is a multi-resource API. AWS evaluates it against each
+        # resource involved in the launch, including the network interface.
+        # Resource-level restrictions and request-tag conditions are not
+        # reliable across those authorization contexts. The permission set is
+        # assigned only to the allowlisted lab accounts; exercise lifecycle
+        # mutations below require an Exercise resource tag.
+        Resource = "*"
+      },
+      {
+        Sid    = "CreateLabExerciseSecurityGroups"
+        Effect = "Allow"
+        Action = "ec2:CreateSecurityGroup"
+        # EC2 has returned both vpc/* and security-group/* as the authorization
+        # resource for CreateSecurityGroup across API/provider versions. Keep
+        # both account-scoped resource forms. Terraform applies the exercise
+        # tag in a subsequent CreateTags request, so tagging is separately
+        # restricted to creation-time exercise requests below.
+        Resource = concat(local.lab_ec2_vpc_arns, local.lab_ec2_security_group_arns)
+      },
+      {
+        Sid      = "TagLabExerciseResourcesOnlyAtCreation"
+        Effect   = "Allow"
+        Action   = "ec2:CreateTags"
+        Resource = local.lab_ec2_resource_arns
+        Condition = {
+          StringLike = {
+            "aws:RequestTag/Exercise" = "*"
+          }
+          StringEquals = {
+            "ec2:CreateAction" = ["CreateSecurityGroup", "RunInstances"]
+          }
+        }
+      },
+      {
+        Sid    = "ManageTaggedLabExerciseResources"
+        Effect = "Allow"
+        Action = [
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:DeleteSecurityGroup",
+          "ec2:RebootInstances",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:StartInstances",
+          "ec2:StopInstances",
+          "ec2:TerminateInstances",
+        ]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "ec2:ResourceTag/Exercise" = "*"
+          }
+        }
+      },
+      {
+        Sid      = "ReadLabEvidenceBucketMetadata"
+        Effect   = "Allow"
+        Action   = "s3:GetBucketLocation"
+        Resource = local.lab_evidence_bucket_arn
+      },
+      {
+        Sid      = "ListOnlyAssignedLabEvidencePrefixes"
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = local.lab_evidence_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = local.lab_evidence_prefixes
+          }
+        }
+      },
+      {
+        Sid    = "ReadOnlyAssignedLabEvidence"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+        ]
+        Resource = local.lab_evidence_object_arns
+      },
+      {
         Sid    = "DenyBoundaryAndCredentialEscalation"
         Effect = "Deny"
         Action = [
@@ -528,16 +707,13 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
           "iam:AttachUserPolicy",
           "iam:CreateAccessKey",
           "iam:CreateGroup",
-          "iam:CreateInstanceProfile",
           "iam:CreateLoginProfile",
-          "iam:CreateOpenIDConnectProvider",
           "iam:CreatePolicy",
           "iam:CreatePolicyVersion",
           "iam:CreateSAMLProvider",
           "iam:CreateServiceLinkedRole",
           "iam:CreateUser",
           "iam:DeleteRolePermissionsBoundary",
-          "iam:PassRole",
           "iam:PutGroupPolicy",
           "iam:PutUserPermissionsBoundary",
           "iam:PutUserPolicy",

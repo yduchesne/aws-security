@@ -24,6 +24,47 @@ jobs:
           echo "Ref: $GITHUB_REF"
           echo "Ref name: $GITHUB_REF_NAME"
 
+      - name: Inspect OIDC claims
+        shell: bash
+        run: |
+           set -euo pipefail
+
+           token_file="$RUNNER_TEMP/exercise9-oidc-token.jwt"
+
+           curl --fail --silent --show-error \
+             --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" |
+             jq -er '.value' > "$token_file"
+
+           chmod 600 "$token_file"
+
+           python3 - "$token_file" <<'PY'
+           import base64
+           import json
+           import sys
+
+           token = open(sys.argv[1], encoding="utf-8").read().strip()
+           payload = token.split(".")[1]
+           payload += "=" * (-len(payload) % 4)
+
+           claims = json.loads(base64.urlsafe_b64decode(payload))
+
+           print(json.dumps({
+               key: claims.get(key)
+               for key in (
+                   "iss",
+                   "aud",
+                   "sub",
+                   "repository",
+                   "repository_owner",
+                   "ref",
+                   "workflow",
+                   "job_workflow_ref",
+                   "environment",
+               )
+           }, indent=2))
+           PY
+
       - name: Verify role variable is configured
         shell: bash
         env:

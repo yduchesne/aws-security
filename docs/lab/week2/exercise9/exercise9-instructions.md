@@ -16,9 +16,20 @@ evidence, and remove only disposable resources.
   - [Policy/resource excerpt](#policyresource-excerpt).
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
+- [GitHub OIDC workflow configuration](#github-oidc-workflow-configuration).
+  - [Obtain the Exercise 9 IAM role ARN](#obtain-the-exercise-9-iam-role-arn).
+  - [Create the GitHub Actions workflow](#create-the-github-actions-workflow).
+  - [Store the IAM role ARN in GitHub](#store-the-iam-role-arn-in-github).
 - [Execute the experiment](#execute-the-experiment).
 - [Investigating in the Console](#investigating-in-the-console).
 - [Evidence and security analysis](#evidence-and-security-analysis).
+  - [Load the exercise role identifier](#load-the-exercise-role-identifier).
+  - [Inspect the role trust policy](#inspect-the-role-trust-policy).
+  - [Inspect the workload identity policy](#inspect-the-workload-identity-policy).
+  - [Inspect the permissions boundary, when attached](#inspect-the-permissions-boundary-when-attached).
+  - [Retrieve the OIDC success and failure events](#retrieve-the-oidc-success-and-failure-events).
+  - [Retrieve the active CloudTrail event from the centralized evidence trail](#retrieve-the-active-cloudtrail-event-from-the-centralized-evidence-trail).
+  - [Analyze the result](#analyze-the-result).
 - [Clean up](#clean-up).
 - [References](#references).
 
@@ -68,6 +79,13 @@ From the repository root, use this order before running Terraform:
 source ~/.env/aws-security/terraform/.env
 cp terraform/lab/week2/exercise9/.env.example terraform/lab/week2/exercise9/.env
 # Edit the copied .env and replace placeholders or desired values.
+# - If you use Github, just leave the provided thumbprint as is. Otherwise,
+#   substitute the value with the thumbprint for your provider.
+# - Likewise for the OIDC URL: if using Github, the current value works. Otherwise,
+#   substitute with the appropriate URL for your provider.
+# - For TF_VAR_oidc_subject, set the value to your desired repo and ref. Example:
+#   export TF_VAR_oidc_subject="repo:yduchesne@1675989/aws-security@1339851610:ref:refs/heads/dev/oidc/main
+# - See terraform/lab/week2/exercise9/.env.example for more details on the above variable value.
 source terraform/lab/week2/exercise9/.env
 ```
 
@@ -78,7 +96,10 @@ to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 The exercise state owns only resources under `/week2/exercise9/` and the
 explicit fixture resources described by the objective. Existing Control Tower,
 Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+ownership boundary. The exercise role trusts only the configured OIDC provider
+and exact subject; the deploying human uses `WorkloadLabAdministrator` only to
+create and inspect the fixture. The Identity Center role suffix is not part of
+the OIDC trust.
 
 ### Policy/resource excerpt
 
@@ -206,33 +227,204 @@ Review the plan before applying. It must not modify organizational governance,
 Control Tower resources, Identity Center resources, or unrelated accounts.
 Stop for unexplained replacements or deletions.
 
-## Execute the experiment
+## GitHub OIDC workflow configuration
 
-Apply only the reviewed plan:
+Complete the following setup after the validation plan has been reviewed. The
+IAM role ARN is not available until the Exercise 9 Terraform root has been
+applied.
+
+### Obtain the Exercise 9 IAM role ARN
+
+Apply only the reviewed Exercise 9 plan:
 
 ```bash
 terraform -chdir=terraform/lab/week2/exercise9 apply
-echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise9 output -raw role_arn)"
 ```
 
-Run the exercise-specific positive and negative tests from the objective. Keep
-an evidence table with: caller, action, resource, expected result, actual
-result, CloudTrail event ID, and the policy layer that explains it.
+Retrieve the authoritative role ARN from Terraform state:
 
-```mermaid
-sequenceDiagram
-    participant C as Caller
-    participant AWS as AWS authorization
-    participant E as Exercise resource
-    C->>AWS: Request selected API action
-    AWS->>AWS: Evaluate all applicable policy layers
-    AWS->>E: Permit or reject request
-    AWS-->>C: Result and request metadata
+```bash
+export EXERCISE9_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise9 output -raw role_arn)"
+echo "Exercise 9 role ARN is configured: ${EXERCISE9_ROLE_ARN:+yes}"
 ```
 
-For Exercise 9, the central comparison is: **Restrict assumerolewithwebidentity to an exact project subject.** Do
-not add permissions until the current policy evaluation and CloudTrail evidence
-have been documented.
+The value must be an IAM role ARN similar to:
+
+```text
+arn:aws:iam::046843662780:role/week2/exercise9/Week2Exercise9Role
+```
+
+Do not manually reconstruct the ARN and do not put AWS access keys, OIDC JWTs,
+or temporary AWS credentials in the repository.
+
+### Create the GitHub Actions workflow
+
+Create this file in the GitHub repository:
+
+```text
+.github/workflows/exercise9-oidc.yml
+```
+
+The `on.push.branches` value must match the branch represented by
+`TF_VAR_oidc_subject`. For example, if the subject is:
+
+```text
+repo:ORG/REPOSITORY:ref:refs/heads/main
+```
+
+then the workflow must use:
+
+```yaml
+on:
+  push:
+    branches:
+      - main
+```
+
+Replace `ORG/REPOSITORY` in the subject with the actual GitHub organization and
+repository, and replace `main` with the actual trusted branch. The branch name
+is part of the signed `sub` claim; it is not merely a workflow filter.
+
+Copy and adjust this workflow:
+
+```yaml
+name: Exercise 9 GitHub OIDC
+
+on:
+  push:
+    branches:
+      - main # Must match refs/heads/<branch> in TF_VAR_oidc_subject.
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  oidc-positive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.EXERCISE9_ROLE_ARN }}
+          aws-region: us-east-2
+          role-session-name: exercise9-github-positive
+
+      - name: Verify the federated identity
+        run: aws sts get-caller-identity --no-cli-pager
+```
+
+Adjust these values before committing the workflow:
+
+- `main` must match the branch in the configured OIDC subject.
+- `us-east-2` must match the Exercise 9 AWS Region.
+- `vars.EXERCISE9_ROLE_ARN` must refer to the GitHub Actions variable created
+  below.
+- The repository and organization must match the exact `sub` claim configured
+  in `TF_VAR_oidc_subject`.
+
+The workflow must retain:
+
+```yaml
+permissions:
+  id-token: write
+```
+
+Without `id-token: write`, GitHub will not issue an OIDC token. This permission
+only permits token issuance; AWS still evaluates the IAM OIDC provider, role
+trust policy, subject, audience, identity policy, boundary, and SCPs.
+
+For a full example, see [this configuration](https://github.com/yduchesne/aws-security/blob/dev/oidc/main/.github/workflows/exercise9-oidc.yml).
+
+### Store the IAM role ARN in GitHub
+
+The role ARN is not a secret, so store it as a GitHub Actions variable rather
+than as an AWS credential or OIDC token.
+
+In the GitHub web interface, open:
+
+```text
+Repository → Settings → Secrets and variables → Actions → Variables
+```
+
+Create a repository variable with:
+
+```text
+Name:  EXERCISE9_ROLE_ARN
+Value: <the output of terraform output -raw role_arn>
+```
+
+Alternatively, with GitHub CLI authenticated to the target repository (replace `ORG` and `REPOSITORY`
+according to your setup).
+
+```bash
+gh variable set EXERCISE9_ROLE_ARN \
+  --repo ORG/REPOSITORY \
+  --body "$EXERCISE9_ROLE_ARN"
+```
+
+For a protected GitHub Environment, use an environment-scoped variable and
+make the workflow job declare that environment:
+
+```bash
+gh variable set EXERCISE9_ROLE_ARN \
+  --repo ORG/REPOSITORY \
+  --env production \
+  --body "$EXERCISE9_ROLE_ARN"
+```
+
+```yaml
+jobs:
+  oidc-positive:
+    environment: production
+```
+
+Use an environment when deployment approvals, protected branches, or reviewers
+are part of the control. The environment name itself changes the GitHub OIDC
+subject when the subject format uses an environment claim, for example:
+
+```text
+repo:ORG/REPOSITORY:environment:production
+```
+
+Verify that the repository variable is configured without printing its value in
+workflow logs:
+
+```yaml
+- name: Verify role variable is configured
+  shell: bash
+  env:
+    EXERCISE9_ROLE_ARN: ${{ vars.EXERCISE9_ROLE_ARN }}
+  run: |
+    set -euo pipefail
+    test -n "$EXERCISE9_ROLE_ARN"
+    case "$EXERCISE9_ROLE_ARN" in
+      arn:aws:iam::*:role/*) ;;
+      *) echo "EXERCISE9_ROLE_ARN is not a valid IAM role ARN" >&2; exit 1 ;;
+    esac
+    echo "EXERCISE9_ROLE_ARN is configured"
+```
+
+## Execute the experiment
+
+The reviewed Terraform plan was applied in the preceding setup section. Confirm
+the role ARN before running the workflow tests:
+
+```bash
+echo "role_arn: $EXERCISE9_ROLE_ARN"
+```
+
+Then, proceed as follows:
+
+1. Push a change to the branch that your workflow is hooked to
+   (if your branch doesn't accept direct pushes, create a PR and
+   merge it).
+2. Got to your GitHub repo > Actions. Check that your workflow completes
+   as expected (if not, investigate and fix).
 
 ## Investigating in the Console
 
@@ -263,10 +455,112 @@ Explicit deny → SCP/RCP → identity policy → boundary/session policy
              → resource/trust policy → conditions → effective result
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+The Terraform fixture creates the role, its OIDC provider, and its identity
+policy, but it does not mint an external web-identity token. Complete the token
+prerequisites described in **Execute the experiment** before treating an
+`AssumeRoleWithWebIdentity` test as valid. Do not substitute an ordinary
+`AssumeRole` call: it exercises a different trust action.
+
+### Load the exercise role identifier
+
+```bash
+export EXERCISE9_ROLE_ARN="$(terraform -chdir=terraform/lab/week2/exercise9 output -raw role_arn)"
+export EXERCISE9_ROLE_NAME="${EXERCISE9_ROLE_ARN##*/}"
+echo "role_arn: $EXERCISE9_ROLE_ARN"
+```
+
+Confirm that the ARN identifies the disposable Exercise 9 role in the source
+account and that the role name is not an existing Control Tower or
+`AWSReservedSSO_*` role.
+
+### Inspect the role trust policy
+
+```bash
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE9_ROLE_NAME" \
+  --query 'Role.{Arn:Arn,Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary.PermissionsBoundaryArn,Path:Path}' \
+  --output json \
+  --no-cli-pager
+```
+
+For the implemented OIDC version, look for a federated principal naming the
+intended OIDC provider, `sts:AssumeRoleWithWebIdentity`, an audience condition
+of `sts.amazonaws.com`, and an exact subject condition equal to
+`TF_VAR_oidc_subject`. The negative test must differ only in the subject and
+must be rejected. The provider and exact claim conditions are the evidence of the OIDC trust
+boundary; a human-principal trust is not an equivalent substitute.
+
+### Inspect the workload identity policy
+
+```bash
+aws iam get-role-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE9_ROLE_NAME" \
+  --policy-name Exercise9Policy \
+  --query PolicyDocument \
+  --output json \
+  --no-cli-pager
+```
+
+Look for only the deliberate `sts:GetCallerIdentity` Allow. This policy grants
+identity verification after assumption; it does not authorize the trust
+operation. Do not infer successful federation from this identity policy.
+
+### Inspect the permissions boundary, when attached
+
+```bash
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE9_ROLE_NAME" \
+  --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' \
+  --output text \
+  --no-cli-pager
+```
+
+If a boundary ARN is returned, retrieve its active policy version with an
+approved IAM inspection profile. Confirm that the boundary is a ceiling and
+not the grant that permits web identity assumption. If the result is `None`,
+record that the scaffold has no boundary and do not claim boundary evidence.
+
+### Retrieve the OIDC success and failure events
+
+```bash
+aws cloudtrail lookup-events \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region "$TF_HOME_REGION" \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --query 'Events[].{Time:EventTime,EventId:EventId,Username:Username,Event:CloudTrailEvent}' \
+  --output json \
+  --no-cli-pager
+```
+
+Filter the returned JSON for `EXERCISE9_ROLE_ARN`, the OIDC provider, the
+expected subject, and the test time. A successful event must identify the
+intended role session and have no error code. The negative event must identify
+the same role and provider but show `AccessDenied` or the documented STS
+validation error caused by the incorrect subject. An `AssumeRole` event is not
+evidence for this exercise.
+
+### Retrieve the active CloudTrail event from the centralized evidence trail
+
+The OIDC federation event is a CloudTrail management event, so the preceding
+`lookup-events` command is authoritative for the event history. If the event
+is outside the Event History retention window, retrieve the centralized log
+using the complete account-prefix, delivered-directory, download, and filter
+workflow documented in [`cloud-trail-logs.md`](../../../cloud-trail-logs.md).
+This scaffold does not currently create an S3 data-event fixture, so do not
+claim an S3 evidence object for Exercise 9.
+
+### Analyze the result
+
+Compare the positive and negative events in a table containing the provider,
+audience, subject, role ARN, event ID, error code, and final decision. Explain
+that the exact-subject condition is the trust-policy control, while the role
+identity policy only controls what an already authenticated role session may
+request. Discuss the residual risk of trusting a mutable or overly broad
+subject pattern and the production control of pinning repository, workflow, or
+branch claims according to the CI/CD provider's documented claims.
 
 ## Clean up
 

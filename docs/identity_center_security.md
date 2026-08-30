@@ -53,10 +53,18 @@ administration.
 
 `WorkloadLabAdministrator` is a one-hour bounded lab persona. It can manage
 only Week 2-path roles carrying the pre-provisioned
-`WorkloadLabRoleBoundary`, named lab S3 buckets, and approved cross-account STS
-role assumptions. It cannot create or mutate its boundary, remove a role
-boundary, create IAM users or access keys, pass roles, or administer central
-governance. The dedicated `WorkloadLabBaselineAdmin` sessions—not the
+`WorkloadLabRoleBoundary`, named lab S3 buckets, approved cross-account STS role
+assumptions, and narrowly scoped Exercise 8 EC2 resources. Exercise 8 permits
+only small instance types, bounded roles and instance profiles under
+`/week2/exercise8/`, EC2-only `iam:PassRole`, no-ingress security groups, and
+tag-scoped termination. It also has read-only access to the project-owned lab
+evidence bucket, limited to the Dev Lab and Test Lab organization-trail
+prefixes. The Log Archive bucket policy independently restricts callers to the
+expected Identity Center role patterns; the permission set grants no evidence
+write, delete, bucket-policy, trail, or Log Archive account administration. It
+cannot create or mutate its boundary, remove a role boundary, create IAM users
+or access keys, pass roles, or administer central governance. The dedicated
+`WorkloadLabBaselineAdmin` sessions—not the
 bounded exercise administrator—must provision the boundary in both lab
 accounts before exercises begin.
 

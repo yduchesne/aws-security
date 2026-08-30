@@ -24,15 +24,23 @@ variable "common_tags" {
   }
 }
 
+variable "lab_role_boundary_name" {
+  description = "Pre-provisioned boundary required by every exercise role."
+  type        = string
+  default     = "WorkloadLabRoleBoundary"
+}
+
+variable "lab_role_boundary_path" {
+  description = "Path of the pre-provisioned lab role boundary."
+  type        = string
+  default     = "/week2/"
+}
+
 variable "target_account_id" {
   description = "Dev/Test lab target account ID used by the exercise context."
   type        = string
 }
 variable "target_aws_profile" {
   description = "IAM Identity Center-backed target account profile."
-  type        = string
-}
-variable "source_operator_role_arn" {
-  description = "IAM Identity Center-provisioned source operator role ARN."
   type        = string
 }

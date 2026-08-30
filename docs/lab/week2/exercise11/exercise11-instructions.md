@@ -78,7 +78,10 @@ to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 The exercise state owns only resources under `/week2/exercise11/` and the
 explicit fixture resources described by the objective. Existing Control Tower,
 Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+ownership boundary. The exercise role uses the Dev Lab account principal plus
+an `aws:PrincipalArn` condition matching the
+`AWSReservedSSO_WorkloadLabAdministrator_*` role path. The generated suffix is
+wildcarded safely and is not a Terraform input.
 
 ### Policy/resource excerpt
 
