@@ -4,5 +4,5 @@
 4. Merge it to the dev/oidc/main branch 
    (that branch triggers this workflow: .github/workflows/exercice9-oidc.yml).
 ====
-version: 2
+version: 3
 
