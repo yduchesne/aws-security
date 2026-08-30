@@ -841,7 +841,119 @@ UntrustedCrossAccountCallerRole
 Keeping the source identity policies equivalent isolates the target trust
 policy as the reason for the expected failure. Follow the linked Terraform file
 to inspect the complete role descriptions, provider assignments, generated
-ARNs, boundaries, and target role definition.
+ARNs, and boundaries.
+
+#### Target role read-only policy excerpt
+
+The target role is created with its trust policy and the pre-existing
+boundary, and it receives the exercise-created inline identity policy
+`ReadOnlyApprovedExerciseResource`. Its authoritative Terraform definitions are
+in
+[`terraform/lab/week2/exercise1/main.tf`](../../../../terraform/lab/week2/exercise1/main.tf):
+
+```hcl
+resource "aws_iam_role" "target_read" {
+  provider = aws.target
+
+  name                 = var.target_role_name
+  path                 = local.role_path
+  description          = "Target-account role with read-only access to the approved exercise resource."
+  assume_role_policy   = data.aws_iam_policy_document.target_trust.json
+  permissions_boundary = data.aws_iam_policy.target_role_boundary.arn
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "target_read" {
+  provider = aws.target
+
+  statement {
+    sid    = "ReadApprovedBucketMetadata"
+    effect = "Allow"
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+    ]
+    resources = [aws_s3_bucket.approved.arn]
+  }
+
+  statement {
+    sid       = "ReadOnlyApprovedObject"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.approved.arn}/${var.approved_object_key}"]
+  }
+}
+
+resource "aws_iam_role_policy" "target_read" {
+  provider = aws.target
+
+  name   = "ReadOnlyApprovedExerciseResource"
+  role   = aws_iam_role.target_read.id
+  policy = data.aws_iam_policy_document.target_read.json
+}
+```
+
+At apply time, `aws_s3_bucket.approved.arn` renders to
+`arn:<PARTITION>:s3:::$TF_VAR_approved_bucket_name` and
+`var.approved_object_key` renders to `exercise-1/allowed.txt`, so the
+second statement targets exactly
+`arn:<PARTITION>:s3:::$TF_VAR_approved_bucket_name/exercise-1/allowed.txt`.
+Do not substitute the placeholders with literal example values; read the
+rendered policy from the applied resource or with
+`aws iam get-role-policy` as shown in
+[Evidence and security analysis](#evidence-and-security-analysis).
+
+This is an identity policy. It answers:
+
+```text
+What may the CrossAccountReadRole session request?
+```
+
+Its intended principal association and scope are:
+
+- It is attached as the inline `ReadOnlyApprovedExerciseResource` policy of
+  `CrossAccountReadRole` in the Test Lab/target account. It applies to assumed
+  sessions of that role only, not to any other target-account principal.
+- It allows `s3:GetBucketLocation` and `s3:ListBucket` on the approved bucket
+  only, which supports the approved metadata and listing tests.
+- It allows `s3:GetObject` on the single approved object ARN only, which
+  supports the approved object read.
+
+It deliberately excludes:
+
+- Any `s3:PutObject` grant. Writing to the approved bucket (Test 4) is
+  implicitly denied because no identity-policy Allow exists, even though the
+  permissions boundary's broader S3 ceiling includes write actions for other
+  bounded roles.
+- Any ARN for the unrelated bucket or its object. Listing and reading the
+  unrelated bucket (Test 5) is implicitly denied for the same reason. Neither
+  bucket has a bucket policy, so the denials come from the missing identity
+  Allow rather than from an explicit resource-policy deny.
+- Any action outside these two S3 resources; all unrelated operations remain
+  implicitly denied.
+
+The attached `WorkloadLabRoleBoundary` remains only a maximum-permissions
+ceiling. The boundary permits S3 access to the whole Week 2 bucket prefix,
+which is broader than this identity grant; an Allow here still requires this
+identity policy to grant the same action, and an applicable explicit deny,
+SCP, or session policy would still win.
+
+Weak points and residual risk of this excerpt:
+
+- `s3:ListBucket` on the approved bucket lets the session enumerate every
+  object key in that bucket, even though only `exercise-1/allowed.txt` is
+  readable. Key names can reveal information by themselves. A production
+  design would narrow the listing with a `s3:prefix` condition key when key
+  enumeration should be constrained.
+- The read scope widens silently if `var.approved_object_key` is ever changed
+  to a wildcard or a prefix-like value, because the object ARN is rendered
+  from that variable without further validation.
+- Because the boundary ceiling already permits `s3:PutObject` and
+  `s3:DeleteObject` on lab-prefix buckets, a future edit that widens this
+  identity policy could raise the role's effective access up to that ceiling.
+  Compensating controls are the disposable bucket lifecycle expiry, the
+  requirement that any policy change be reviewed through this Terraform root,
+  and, if required in production, an explicit SCP deny for the write actions.
 
 ## Initialize, validate, and plan
 
