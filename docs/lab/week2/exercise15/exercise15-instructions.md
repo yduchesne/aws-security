@@ -78,7 +78,11 @@ to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 The exercise state owns only resources under `/week2/exercise15/` and the
 explicit fixture resources described by the objective. Existing Control Tower,
 Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+ownership boundary. The working baseline trust uses the Dev Lab account
+principal plus an `aws:PrincipalArn` condition matching the
+`AWSReservedSSO_WorkloadLabAdministrator_*` role path. This avoids accidental
+failure from an obsolete generated suffix while deliberate trust-condition
+failures remain part of the troubleshooting exercise.
 
 ### Policy/resource excerpt
 

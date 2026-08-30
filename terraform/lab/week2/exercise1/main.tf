@@ -1,8 +1,10 @@
 # Curriculum: Core
 locals {
-  role_path                = "/week2/exercise1/"
-  source_role_boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
-  target_role_boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${var.target_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  role_path                        = "/week2/exercise1/"
+  source_role_boundary_arn         = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  target_role_boundary_arn         = "arn:${data.aws_partition.current.partition}:iam::${var.target_account_id}:policy${var.lab_role_boundary_path}${var.lab_role_boundary_name}"
+  source_operator_role_path_prefix = var.aws_region == "us-east-1" ? "/aws-reserved/sso.amazonaws.com/" : "/aws-reserved/sso.amazonaws.com/${var.aws_region}/"
+  source_operator_role_arn_pattern = "arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:role${local.source_operator_role_path_prefix}AWSReservedSSO_WorkloadLabAdministrator_*"
 }
 
 data "aws_iam_policy" "source_role_boundary" {
@@ -25,7 +27,13 @@ data "aws_iam_policy_document" "source_operator_trust" {
 
     principals {
       type        = "AWS"
-      identifiers = [var.source_operator_role_arn]
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${var.source_account_id}:root"]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:PrincipalArn"
+      values   = [local.source_operator_role_arn_pattern]
     }
   }
 }
@@ -284,13 +292,6 @@ check "exercise_accounts_are_distinct" {
   assert {
     condition     = var.source_account_id != var.target_account_id
     error_message = "source_account_id and target_account_id must identify different AWS accounts."
-  }
-}
-
-check "operator_belongs_to_source_account" {
-  assert {
-    condition     = split(":", var.source_operator_role_arn)[4] == var.source_account_id
-    error_message = "source_operator_role_arn must belong to source_account_id."
   }
 }
 

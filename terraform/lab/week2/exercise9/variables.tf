@@ -24,13 +24,33 @@ variable "common_tags" {
   }
 }
 variable "oidc_url" {
-  type = string
+  description = "HTTPS issuer URL for the trusted OIDC provider."
+  type        = string
+
+  validation {
+    condition     = can(regex("^https://[^/[:space:]]+(/[^[:space:]]*)?$", var.oidc_url))
+    error_message = "oidc_url must be an HTTPS OIDC issuer URL."
+  }
 }
+
 variable "oidc_thumbprint" {
-  type = string
+  description = "Lowercase SHA-1 thumbprint for the OIDC provider's TLS certificate chain."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{40}$", var.oidc_thumbprint))
+    error_message = "oidc_thumbprint must be a 40-character hexadecimal SHA-1 thumbprint."
+  }
 }
+
 variable "oidc_subject" {
-  type = string
+  description = "Exact OIDC subject claim trusted by the exercise role."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.oidc_subject)) > 0 && !strcontains(var.oidc_subject, "*")
+    error_message = "oidc_subject must be non-empty and must not contain wildcards."
+  }
 }
 
 variable "target_account_id" {
@@ -39,9 +59,5 @@ variable "target_account_id" {
 }
 variable "target_aws_profile" {
   description = "IAM Identity Center-backed target account profile."
-  type        = string
-}
-variable "source_operator_role_arn" {
-  description = "IAM Identity Center-provisioned source operator role ARN."
   type        = string
 }

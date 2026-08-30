@@ -17,6 +17,10 @@ evidence, and remove only disposable resources.
   - [Permissions-boundary excerpt](#permissions-boundary-excerpt).
 - [Configure, initialize, and validate](#configure-initialize-and-validate).
 - [Execute the experiment](#execute-the-experiment).
+  - [Prepare the test inputs](#prepare-the-test-inputs).
+  - [Happy path: create a role with the approved boundary](#happy-path-create-a-role-with-the-approved-boundary).
+  - [Unhappy path: create a role without the boundary](#unhappy-path-create-a-role-without-the-boundary).
+  - [Remove the CLI test fixture](#remove-the-cli-test-fixture).
 - [Investigating in the Console](#investigating-in-the-console).
 - [Evidence and security analysis](#evidence-and-security-analysis).
 - [Clean up](#clean-up).
@@ -78,7 +82,9 @@ to shared values such as `TF_LAB_DEV_ACCOUNT_ID`, `TF_LAB_TEST_ACCOUNT_ID`,
 The exercise state owns only resources under `/week2/exercise5/` and the
 explicit fixture resources described by the objective. Existing Control Tower,
 Identity Center, baseline, and `AWSReservedSSO_*` resources remain outside its
-ownership boundary.
+ownership boundary. The configuration reads the existing
+`/week2/WorkloadLabRoleBoundary` as a data source and attaches it to
+`Week2Exercise5Role`; it does not take ownership of the boundary policy.
 
 ### Policy/resource excerpt
 
@@ -175,16 +181,16 @@ it from this exercise.
 
 #### Boundary analysis
 
-This boundary is associated with any role to which the baseline attaches it.
-It allows only the listed `sts:AssumeRole`, identity-verification, and Week 2
-S3 operations within the two lab accounts and configured bucket prefix. It
-intentionally does not allow arbitrary IAM administration, user or access-key
-management, managed-policy creation, or unrestricted access to other services.
-Its weak point is that the ceiling still permits the listed role and S3 actions
-when a separate identity policy grants them; a boundary cannot prevent an
-identity policy from granting an action that the boundary allows. The baseline
-owner must therefore protect both the boundary and the policies attached to
-bounded roles.
+The exercise root attaches this baseline-owned boundary whenever it creates its
+role. It allows only the listed `sts:AssumeRole`, identity-verification, and
+Week 2 S3 operations within the two lab accounts and configured bucket prefix.
+It intentionally does not allow arbitrary IAM administration, user or
+access-key management, managed-policy creation, or unrestricted access to
+other services. Its weak point is that the ceiling still permits the listed
+role and S3 actions when a separate identity policy grants them; a boundary
+cannot prevent an identity policy from granting an action that the boundary
+allows. The baseline owner must therefore protect the boundary, while delegated
+role creators must be prevented from omitting, replacing, or removing it.
 
 
 ## Configure, initialize, and validate
@@ -202,7 +208,10 @@ terraform -chdir=terraform/lab/week2/exercise5 validate
 terraform -chdir=terraform/lab/week2/exercise5 plan
 ```
 
-Review the plan before applying. It must not modify organizational governance,
+Review the plan before applying. Confirm that `Week2Exercise5Role` is created
+under `/week2/exercise5/` with the existing
+`/week2/WorkloadLabRoleBoundary` attached. The plan must read rather than create
+or modify the boundary, and it must not modify organizational governance,
 Control Tower resources, Identity Center resources, or unrelated accounts.
 Stop for unexplained replacements or deletions.
 
@@ -215,24 +224,155 @@ terraform -chdir=terraform/lab/week2/exercise5 apply
 echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise5 output -raw role_arn)"
 ```
 
-Run the exercise-specific positive and negative tests from the objective. Keep
-an evidence table with: caller, action, resource, expected result, actual
-result, CloudTrail event ID, and the policy layer that explains it.
+The Terraform apply is an initial happy-path observation: the delegated
+`WorkloadLabAdministrator` session can create `Week2Exercise5Role` because the
+request includes the approved boundary. The following CLI tests repeat the
+same `iam:CreateRole` operation while changing only whether that boundary is
+present. Do not use a management-account session or a broader administrator
+for these tests.
+
+Keep an evidence table with the caller, account, action, role ARN, boundary
+request parameter, predicted result, actual result, CLI exit status, CloudTrail
+event ID, and policy layer that explains the result.
+
+### Prepare the test inputs
+
+Read the approved boundary ARN from the Terraform-created role and construct a
+trust policy for two short-lived CLI test roles. The trust policy uses the Dev
+Lab account principal plus an `aws:PrincipalArn` condition matching the
+suffix-resilient Identity Center role path; it never trusts a temporary session
+ARN.
+
+```bash
+export EXERCISE5_BOUNDARY_ARN="$(aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise5Role \
+  --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' \
+  --output text \
+  --no-cli-pager)"
+
+test -n "$EXERCISE5_BOUNDARY_ARN"
+test "$EXERCISE5_BOUNDARY_ARN" != "None"
+
+export EXERCISE5_TEST_ID="$(date +%s)-$RANDOM"
+export EXERCISE5_BOUNDED_ROLE="Week2Exercise5Bounded-$EXERCISE5_TEST_ID"
+export EXERCISE5_UNBOUNDED_ROLE="Week2Exercise5Unbounded-$EXERCISE5_TEST_ID"
+if [ "$TF_HOME_REGION" = "us-east-1" ]; then
+  export EXERCISE5_SSO_ROLE_PATH="/aws-reserved/sso.amazonaws.com/"
+else
+  export EXERCISE5_SSO_ROLE_PATH="/aws-reserved/sso.amazonaws.com/$TF_HOME_REGION/"
+fi
+export EXERCISE5_OPERATOR_PATTERN="arn:aws:iam::$TF_VAR_source_account_id:role${EXERCISE5_SSO_ROLE_PATH}AWSReservedSSO_WorkloadLabAdministrator_*"
+export EXERCISE5_TRUST_POLICY="$(cat <<EOF
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::$TF_VAR_source_account_id:root"},"Action":"sts:AssumeRole","Condition":{"ArnLike":{"aws:PrincipalArn":"$EXERCISE5_OPERATOR_PATTERN"}}}]}
+EOF
+)"
+```
+
+The timestamp and shell-random suffix avoid stale-name collisions. If either
+role name already exists, choose a new `EXERCISE5_TEST_ID`; do not treat
+`EntityAlreadyExists` as authorization evidence.
+
+### Happy path: create a role with the approved boundary
+
+Prediction: `iam:CreateRole` succeeds because the role is under `/week2/` and
+the request's `PermissionsBoundary` value exactly matches the boundary allowed
+by the `WorkloadLabAdministrator` permission set.
+
+```bash
+aws iam create-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE5_BOUNDED_ROLE" \
+  --path "/week2/exercise5/" \
+  --permissions-boundary "$EXERCISE5_BOUNDARY_ARN" \
+  --assume-role-policy-document "$EXERCISE5_TRUST_POLICY" \
+  --query 'Role.Arn' \
+  --output text \
+  --no-cli-pager
+
+actual_boundary_arn="$(aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE5_BOUNDED_ROLE" \
+  --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' \
+  --output text \
+  --no-cli-pager)"
+
+if [ "$actual_boundary_arn" = "$EXERCISE5_BOUNDARY_ARN" ]; then
+  echo "Bounded role creation succeeded with the approved boundary."
+else
+  echo "UNEXPECTED: created role does not have the approved boundary." >&2
+fi
+```
+
+Expected result: both commands exit with status `0`, the returned role ARN uses
+`/week2/exercise5/`, and the final boundary comparison succeeds. The boundary
+is a required ceiling, not the source of the caller's `iam:CreateRole` grant.
+
+### Unhappy path: create a role without the boundary
+
+Prediction: the same `iam:CreateRole` action is denied because this request
+omits `--permissions-boundary`. The conditional Allow in
+`WorkloadLabAdministrator` therefore does not match.
+
+```bash
+if unbounded_result="$(aws iam create-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE5_UNBOUNDED_ROLE" \
+  --path "/week2/exercise5/" \
+  --assume-role-policy-document "$EXERCISE5_TRUST_POLICY" \
+  --query 'Role.Arn' \
+  --output text \
+  --no-cli-pager 2>&1)"; then
+  echo "UNEXPECTED: unbounded role creation succeeded: $unbounded_result" >&2
+  aws iam delete-role \
+    --profile "$TF_VAR_source_aws_profile" \
+    --role-name "$EXERCISE5_UNBOUNDED_ROLE"
+else
+  echo "$unbounded_result"
+  case "$unbounded_result" in
+    *AccessDenied*) echo "Unbounded role creation was denied as expected." ;;
+    *) echo "UNEXPECTED: failure was not AccessDenied; do not count this as a valid negative test." >&2 ;;
+  esac
+fi
+```
+
+Expected result: IAM returns `AccessDenied`, the AWS CLI takes the `else`
+branch, and no unbounded role exists. An expired SSO login, malformed trust
+policy, wrong account, existing role name, or network failure is not a valid
+negative result. If creation succeeds, stop and investigate the live permission
+set and applicable policies before continuing.
+
+### Remove the CLI test fixture
+
+The successful CLI test role is not owned by Terraform state. Delete it after
+collecting evidence:
+
+```bash
+aws iam delete-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name "$EXERCISE5_BOUNDED_ROLE"
+
+unset EXERCISE5_BOUNDARY_ARN EXERCISE5_TEST_ID EXERCISE5_BOUNDED_ROLE
+unset EXERCISE5_UNBOUNDED_ROLE EXERCISE5_TRUST_POLICY
+unset EXERCISE5_SSO_ROLE_PATH EXERCISE5_OPERATOR_PATTERN
+```
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller
-    participant AWS as AWS authorization
-    participant E as Exercise resource
-    C->>AWS: Request selected API action
-    AWS->>AWS: Evaluate all applicable policy layers
-    AWS->>E: Permit or reject request
-    AWS-->>C: Result and request metadata
+    participant D as Delegated administrator
+    participant IAM as AWS IAM authorization
+    participant R as Exercise role
+    D->>IAM: CreateRole with approved boundary
+    IAM->>IAM: Boundary condition matches
+    IAM-->>D: Allowed
+    D->>IAM: CreateRole without boundary
+    IAM->>IAM: Conditional Allow does not match
+    IAM-->>D: AccessDenied
 ```
 
-For Exercise 5, the central comparison is: **Require an approved boundary when creating application roles.** Do
-not add permissions until the current policy evaluation and CloudTrail evidence
-have been documented.
+Do not add a broader `iam:CreateRole` Allow to make the denied test pass. The
+security control is the conditional delegation that requires the approved
+boundary on every new role.
 
 ## Investigating in the Console
 
@@ -240,8 +380,8 @@ Use IAM Identity Center access-portal sessions, not IAM user keys. Verify the
 account ID in the console account menu before inspecting anything.
 
 1. Open **IAM** and inspect the exercise role under `/week2/exercise5/`.
-2. Review its trust relationship, identity policies, tags, and permissions
-   boundary where present.
+2. Review its trust relationship, identity policies, tags, and attached
+   `/week2/WorkloadLabRoleBoundary`.
 3. Open the relevant resource service and verify the resource ARN, tags,
    ownership controls, or resource policy.
 4. In **CloudTrail → Event history**, filter for the API action under test and
@@ -255,22 +395,92 @@ should be broadened; use a read-only inspection session or the CLI instead.
 
 ## Evidence and security analysis
 
-Record the exact expected decision before each test. Explain the result using
-this order:
+Retrieve the Terraform role to prove the approved boundary exists and is
+attached under the delegated Week 2 path:
 
-```text
-Explicit deny → SCP/RCP → identity policy → boundary/session policy
-             → resource/trust policy → conditions → effective result
+```bash
+aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise5Role \
+  --query 'Role.{Arn:Arn,Path:Path,Boundary:PermissionsBoundary.PermissionsBoundaryArn,Trust:AssumeRolePolicyDocument}' \
+  --output json \
+  --no-cli-pager
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+Look for `/week2/exercise5/` and boundary suffix
+`:policy/week2/WorkloadLabRoleBoundary`. This role is the persistent
+configuration example corresponding to the successful CLI-created bounded role.
+
+Retrieve the boundary's active policy version:
+
+```bash
+export EXERCISE5_BOUNDARY_ARN="$(aws iam get-role \
+  --profile "$TF_VAR_source_aws_profile" \
+  --role-name Week2Exercise5Role \
+  --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' \
+  --output text \
+  --no-cli-pager)"
+export EXERCISE5_BOUNDARY_VERSION="$(aws iam get-policy \
+  --profile "$TF_VAR_source_aws_profile" \
+  --policy-arn "$EXERCISE5_BOUNDARY_ARN" \
+  --query Policy.DefaultVersionId \
+  --output text \
+  --no-cli-pager)"
+aws iam get-policy-version \
+  --profile "$TF_VAR_source_aws_profile" \
+  --policy-arn "$EXERCISE5_BOUNDARY_ARN" \
+  --version-id "$EXERCISE5_BOUNDARY_VERSION" \
+  --query PolicyVersion.Document.Statement \
+  --output json \
+  --no-cli-pager
+```
+
+Confirm this is the baseline-owned maximum-permissions policy. The boundary does
+not grant `iam:CreateRole`; the caller's `WorkloadLabAdministrator` permission
+set grants that API only when the request includes this exact boundary ARN.
+
+Retrieve the `CreateRole` management events generated by Terraform and both CLI
+tests. IAM is a global service, so query `us-east-1`:
+
+```bash
+aws cloudtrail lookup-events \
+  --profile "$TF_VAR_source_aws_profile" \
+  --region us-east-1 \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=CreateRole \
+  --query "Events[?contains(CloudTrailEvent, 'Week2Exercise5')].[EventTime,EventId,Username,CloudTrailEvent]" \
+  --output json \
+  --no-cli-pager
+```
+
+For the bounded role event, inspect `requestParameters.path`,
+`requestParameters.roleName`, and `requestParameters.permissionsBoundary`.
+They should show `/week2/exercise5/`, the generated bounded test-role name, and
+the approved boundary ARN, with no `errorCode`. For the unbounded attempt, the
+same fields should identify the same path and test purpose but omit
+`permissionsBoundary`; `errorCode` should be `AccessDenied`. Record both event
+IDs and timestamps. `EntityAlreadyExists`, malformed trust policy, or an event
+from another caller is not valid negative evidence.
+
+The denied role has no retrievable configuration because IAM never created it.
+Use the failed `CreateRole` event—not a missing-resource error from a later
+command—as the authoritative negative-test evidence.
+
+| Test | `permissionsBoundary` request value | Expected `CreateRole` outcome | Determining layer |
+|---|---|---|---|
+| Approved boundary | Exact baseline policy ARN | Success | Conditional caller Allow matches. |
+| Boundary omitted | Absent | `AccessDenied` | No identity-based Allow matches. |
+
+Explain that requiring the boundary at creation prevents the delegated operator
+from creating an initially unbounded role. Also account for the explicit denial
+of `DeleteRolePermissionsBoundary` and the restriction on replacing the
+boundary; creation-time enforcement alone would otherwise be insufficient.
 
 ## Clean up
 
-Preserve redacted evidence, then review and execute only the exercise destroy:
+Preserve redacted evidence and complete
+[Remove the CLI test fixture](#remove-the-cli-test-fixture) before destroying
+the Terraform-managed fixture. Terraform does not track the role created by
+the happy-path CLI test. Then review and execute only the exercise destroy:
 
 ```bash
 terraform -chdir=terraform/lab/week2/exercise5 plan -destroy

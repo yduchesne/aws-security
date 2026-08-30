@@ -28,6 +28,22 @@ lab accounts. That permission set can create, read, tag, and version only the
 exact `/week2/WorkloadLabRoleBoundary` policy; it cannot create roles, users,
 access keys, identity providers, or administer central governance.
 
+`WorkloadLabAdministrator` also has read-only cross-account access to the Dev
+Lab and Test Lab prefixes in the dedicated
+`aws-security-lab-evidence-<MANAGEMENT_ACCOUNT_ID>` bucket. The bucket is owned
+by `terraform/lab/evidence` in the Log Archive account and independently
+restricts the expected Identity Center role patterns. This permission grants no
+Log Archive account session and no evidence write or delete action. See
+[`docs/cloud-trail-logs.md`](../../../docs/cloud-trail-logs.md).
+
+For lab exercises, `WorkloadLabAdministrator` can launch instances in the
+explicitly assigned lab accounts, manage resources carrying an `Exercise` tag, create
+instance profiles under `/week*/exercise*/`, and pass only bounded
+lab-exercise roles to EC2. The policy is reusable across weeks and exercise
+numbers. These permissions exist to deploy disposable native-workload-identity
+fixtures and do not grant general EC2 or unrestricted `iam:PassRole`
+administration.
+
 `WorkloadLabAdministrator` is a one-hour bounded lab persona, not a general
 account administrator. It can manage S3 buckets matching
 `lab_bucket_name_prefix`, assume roles under `lab_role_path_prefix`, and create

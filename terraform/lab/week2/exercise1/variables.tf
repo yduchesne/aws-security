@@ -38,16 +38,6 @@ variable "target_aws_profile" {
   }
 }
 
-variable "source_operator_role_arn" {
-  description = "ARN of the specific IAM or IAM Identity Center provisioned role allowed to assume the two source test roles."
-  type        = string
-
-  validation {
-    condition     = can(regex("^arn:[^:]+:iam::[0-9]{12}:role/.+$", var.source_operator_role_arn))
-    error_message = "source_operator_role_arn must be an IAM role ARN."
-  }
-}
-
 variable "aws_region" {
   description = "AWS Region in which the disposable S3 test resources are created."
   type        = string

@@ -34,15 +34,6 @@ variable "target_aws_profile" {
   }
 }
 
-variable "source_operator_role_arn" {
-  description = "Exact IAM role ARN allowed to assume both source test roles."
-  type        = string
-  validation {
-    condition     = can(regex("^arn:[^:]+:iam::[0-9]{12}:role/.+$", var.source_operator_role_arn))
-    error_message = "source_operator_role_arn must be an IAM role ARN."
-  }
-}
-
 variable "trust_mode" {
   description = "Target trust mode: account trusts the source account root; role trusts only the approved role."
   type        = string

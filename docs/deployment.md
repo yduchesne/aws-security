@@ -15,6 +15,10 @@ terraform/bootstrap
   → terraform/identity_center/aft_access
   → terraform/aft/platform
   → GitHub CodeConnections authorization
+  → AFT provisions Dev Lab and Test Lab
+  → terraform/lab/foundation
+  → terraform/lab/evidence
+  → terraform/lab/week2/baseline
 ```
 
 Do not run later roots until the preceding root has completed and its asynchronous AWS service operations are healthy.
@@ -136,7 +140,6 @@ It does not own the AFT OU or AFT management account.
 ### Plan
 
 ```bash
-./tf.sh --phase bootstrap --fmt
 ./tf.sh --phase bootstrap --dry-run
 ```
 
@@ -166,7 +169,6 @@ Control Tower operations are asynchronous. Do not start Identity Center administ
 ### Convergence check
 
 ```bash
-./tf.sh --phase bootstrap --chk
 ./tf.sh --phase bootstrap --dry-run
 ```
 
@@ -186,7 +188,6 @@ Workloads
 Plan the independent root:
 
 ```bash
-./tf.sh --phase workloads --fmt
 ./tf.sh --phase workloads --dry-run
 ```
 
@@ -194,7 +195,6 @@ The plan must create only the four OUs and four `AWSControlTowerBaseline` versio
 
 ```bash
 ./tf.sh --phase workloads --apply
-./tf.sh --phase workloads --chk
 ./tf.sh --phase workloads --dry-run
 ```
 
@@ -230,7 +230,6 @@ terraform -chdir=terraform/identity_center apply
 Then run the complete phase plan:
 
 ```bash
-./tf.sh --phase identity-center --fmt
 ./tf.sh --phase identity-center --dry-run
 ```
 
@@ -257,11 +256,55 @@ After apply:
 ### Convergence check
 
 ```bash
-./tf.sh --phase identity-center --chk
 ./tf.sh --phase identity-center --dry-run
 ```
 
 See [`identity_center_security.md`](identity_center_security.md) for the implemented separation, remaining escalation paths, and future mitigation recommendations.
+
+## Lab Foundation Phase
+
+After AFT has provisioned and Control Tower has enrolled the Dev Lab account,
+create the reusable tagged exercise network:
+
+```bash
+./tf.sh --phase lab-foundation --dry-run
+./tf.sh --phase lab-foundation --apply
+```
+
+The plan must create only `DevLabExerciseVpc`, its internet gateway, public
+route table, tagged public subnet, and deny-all default security group in the
+Dev Lab account. Review `dev_lab_vpc_cidr` and
+`dev_lab_public_subnet_cidr` for overlap before applying. It must not create a
+NAT gateway, EC2 instance, Test Lab network, or Control Tower resource.
+
+Exercise 8 discovers the resulting subnet through `Purpose=LabExercises` and
+`Network=Public`; no environment-specific subnet ID is required.
+
+## Lab Evidence Phase
+
+After Identity Center and workload access converge, create the separate S3-only
+lab data-event trail and its Log Archive bucket:
+
+```bash
+./tf.sh --phase lab-evidence --dry-run
+./tf.sh --phase lab-evidence --apply
+```
+
+The plan must create only the project-owned evidence bucket controls and the
+customer-managed organization trail. It must not modify the Control
+Tower-managed trail or logging buckets. Verify the landing zone remains
+`ACTIVE` and `IN_SYNC`, then re-run the Identity Center phase if the evidence
+read-only statements were introduced after its last apply.
+
+The evidence root is intentionally destructible. Preserve required logs and
+review the destroy plan before running:
+
+```bash
+terraform -chdir=terraform/lab/evidence plan -destroy
+terraform -chdir=terraform/lab/evidence apply -destroy
+```
+
+See [`cloud-trail-logs.md`](cloud-trail-logs.md).
 
 ## Phase 3 — AFT Prerequisites and Platform
 
@@ -283,7 +326,6 @@ The initial AFT deployment therefore uses one sequential apply command. Terrafor
 ### Initial AFT apply
 
 ```bash
-./tf.sh --phase aft --fmt
 ./tf.sh --phase aft --apply
 ```
 
@@ -368,7 +410,6 @@ Activate that named user with MFA and configure `lab-admin-dev` and `lab-admin-t
 After the boundary converges, add any approved exercise group/permission-set combinations to `TF_VAR_account_assignments` for `terraform/identity_center/workload_access`, and review:
 
 ```bash
-./tf.sh --phase identity-center --chk
 ./tf.sh --phase identity-center --dry-run
 ```
 
@@ -409,7 +450,6 @@ AWS references:
 After CodeConnections authorization, run:
 
 ```bash
-./tf.sh --phase aft --chk
 ./tf.sh --phase aft --dry-run
 ```
 
@@ -437,7 +477,6 @@ Run these commands in order for a new environment.
 ### Bootstrap
 
 ```bash
-./tf.sh --phase bootstrap --fmt
 ./tf.sh --phase bootstrap --dry-run
 ```
 
@@ -446,14 +485,12 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase bootstrap --chk
 ./tf.sh --phase bootstrap --dry-run
 ```
 
 ### Workload OU hierarchy
 
 ```bash
-./tf.sh --phase workloads --fmt
 ./tf.sh --phase workloads --dry-run
 ```
 
@@ -462,14 +499,12 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase workloads --chk
 ./tf.sh --phase workloads --dry-run
 ```
 
 ### Identity Center administration
 
 ```bash
-./tf.sh --phase identity-center --fmt
 ./tf.sh --phase identity-center --dry-run
 ```
 
@@ -478,7 +513,6 @@ Run these commands in order for a new environment.
 ```
 
 ```bash
-./tf.sh --phase identity-center --chk
 ./tf.sh --phase identity-center --dry-run
 ```
 
@@ -487,15 +521,32 @@ Run these commands in order for a new environment.
 Ensure the four repositories and their branches exist, then run:
 
 ```bash
-./tf.sh --phase aft --fmt
 ./tf.sh --phase aft --apply
 ```
 
 Complete GitHub CodeConnections authorization, then run:
 
 ```bash
-./tf.sh --phase aft --chk
 ./tf.sh --phase aft --dry-run
+```
+
+After AFT provisions and Control Tower enrolls the Dev Lab and Test Lab
+accounts, deploy their shared lab prerequisites.
+
+### Dev Lab network foundation
+
+```bash
+./tf.sh --phase lab-foundation --dry-run
+./tf.sh --phase lab-foundation --apply
+./tf.sh --phase lab-foundation --dry-run
+```
+
+### Lab S3 data-event evidence
+
+```bash
+./tf.sh --phase lab-evidence --dry-run
+./tf.sh --phase lab-evidence --apply
+./tf.sh --phase lab-evidence --dry-run
 ```
 
 ## Existing or Partially Deployed Environments

@@ -234,6 +234,8 @@ terraform/aft/org_unit
 terraform/workloads/org_units
 terraform/aft/account
 terraform/aft/platform
+terraform/lab/evidence
+terraform/lab/foundation
 ```
 
 It excludes:
