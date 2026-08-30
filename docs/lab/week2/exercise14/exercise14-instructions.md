@@ -85,7 +85,11 @@ trust does not alter the permissions-boundary decision under test.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The identity policy created for this exercise is the AdministratorAccess
+equivalent under test. The authoritative declaration is in
+[`main.tf`](../../../../terraform/lab/week2/exercise14/main.tf); the excerpt
+below shortens the resource block and omits its intentional-fixture `checkov`
+skip comments, which are documented in the source file:
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -94,31 +98,37 @@ resource "aws_iam_role_policy" "exercise" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = ["sts:GetCallerIdentity"]
-      Resource = "*"
+      Sid      = "AdministratorAccessEquivalent"
+      Effect   = "Allow"
+      Action   = ["*"]
+      Resource = ["*"]
     }]
   })
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise14/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
+A permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
-`sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise14/main.tf).
+This excerpt is the identity policy associated with the exercise role, so its
+principal is that role's session. It deliberately replicates an
+AdministratorAccess-equivalent Allow — every action on every resource. It
+answers what this principal may *request*: nominally anything, which is why
+the positive `sts:GetCallerIdentity` probe and the negative `iam:CreateRole`
+and `iam:ListUsers` probes are all covered by this single statement. The
+exercise's point is that this Allow is not the whole authorization decision:
+the effective result is its intersection with the
+`/week2/WorkloadLabRoleBoundary` permissions boundary, which has no applicable
+Allow for the IAM probes. It does not trust any principal; trust is defined
+separately by the role's assume-role policy. It contains no explicit Deny,
+so the IAM denials are produced by the boundary ceiling, not by this policy.
+Its weak point is exactly the wildcard pair: if the boundary were detached,
+replaced, or broadened by a principal able to mutate it, this identity Allow
+would become real administrator access. Always compare this excerpt with the
+role trust policy and the complete declaration in
+[`main.tf`](../../../../terraform/lab/week2/exercise14/main.tf).
 
 ### Permissions-boundary excerpt
 
