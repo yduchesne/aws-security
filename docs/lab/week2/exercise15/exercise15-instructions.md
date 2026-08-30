@@ -219,9 +219,149 @@ terraform -chdir=terraform/lab/week2/exercise15 apply
 echo "role_arn: $(terraform -chdir=terraform/lab/week2/exercise15 output -raw role_arn)"
 ```
 
-Run the exercise-specific positive and negative tests from the objective. Keep
-an evidence table with: caller, action, resource, expected result, actual
-result, CloudTrail event ID, and the policy layer that explains it.
+Run the following tests in order. Record the expected result before each
+command, then capture the actual result, caller ARN, target ARN, session name,
+and CloudTrail event ID in the evidence table. An expected denial is a
+successful test; do not change a policy to make it pass.
+
+First, load the fixture ARNs and define a helper that obtains a fresh source
+caller session. The helper deliberately starts from the operator's SSO
+profile, so each test follows the documented role chain:
+
+```bash
+ROOT=terraform/lab/week2/exercise15
+CALLER_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw caller_role_arn)
+CALLER_WITHOUT_ASSUME_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw caller_without_assume_role_arn)
+UNTRUSTED_CALLER_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw untrusted_caller_role_arn)
+TARGET_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw target_role_arn)
+TARGET_EXTERNAL_ID_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw target_external_id_role_arn)
+TARGET_CONDITION_ROLE_ARN=$(terraform -chdir="$ROOT" output -raw target_condition_role_arn)
+EXTERNAL_ID=$(terraform -chdir="$ROOT" output -raw external_id)
+
+assume_caller() {
+  read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
+    aws sts assume-role \
+      --profile "$TF_VAR_source_aws_profile" \
+      --role-arn "$1" \
+      --role-session-name "$2" \
+      --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+      --output text
+  )
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+}
+
+assume_caller "$CALLER_ROLE_ARN" Ex15BaselineCaller
+aws sts get-caller-identity
+```
+
+### Baseline positive test — identity Allow, trust Allow, no SCP deny
+
+The caller role has an identity-policy Allow for all three target roles and
+`Ex15TargetRole` trusts that specific caller role. This command should succeed
+and the returned identity should be in the target account:
+
+```bash
+aws sts assume-role \
+  --role-arn "$TARGET_ROLE_ARN" \
+  --role-session-name Ex15BaselineTarget
+```
+
+### Failure A — source identity policy has no AssumeRole Allow
+
+Start a fresh caller session using the role that has only
+`sts:GetCallerIdentity`. The following command should fail with
+`AccessDenied` at the source identity-policy layer:
+
+```bash
+assume_caller "$CALLER_WITHOUT_ASSUME_ROLE_ARN" Ex15FailureACaller
+if aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name Ex15FailureA; then
+  echo "UNEXPECTED: Failure A was allowed"
+else
+  echo "Expected AccessDenied: source identity policy has no sts:AssumeRole Allow"
+fi
+```
+
+### Failure B — target trust policy rejects the caller
+
+The untrusted caller has the same source-side AssumeRole Allow as the working
+caller, but no target role trusts it. This should fail at the target trust
+policy layer:
+
+```bash
+assume_caller "$UNTRUSTED_CALLER_ROLE_ARN" Ex15FailureBCaller
+if aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name Ex15FailureB; then
+  echo "UNEXPECTED: Failure B was allowed"
+else
+  echo "Expected AccessDenied: target trust policy does not name this caller"
+fi
+```
+
+### Failure C — source-account SCP explicitly denies AssumeRole
+
+Return to the working caller and verify the baseline succeeds before enabling
+the optional SCP. Then apply only the toggle change. The first command should
+fail despite both identity and trust Allows; the second apply removes the deny
+and the recovery command should succeed again:
+
+```bash
+assume_caller "$CALLER_ROLE_ARN" Ex15FailureCCaller
+aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name Ex15FailureCBeforeSCP
+
+terraform -chdir="$ROOT" apply -var='scp_deny_enabled=true'
+assume_caller "$CALLER_ROLE_ARN" Ex15FailureCBlockedCaller
+if aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name Ex15FailureC; then
+  echo "UNEXPECTED: Failure C was allowed"
+else
+  echo "Expected AccessDenied: source-account SCP explicitly denies sts:AssumeRole"
+fi
+
+terraform -chdir="$ROOT" apply -var='scp_deny_enabled=false'
+assume_caller "$CALLER_ROLE_ARN" Ex15FailureCRecoveryCaller
+aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name Ex15FailureCRecovery
+```
+
+### Failure D — ExternalId condition mismatch, then recovery
+
+Use the working caller and omit the ExternalId (or deliberately provide a
+wrong one). The first command should fail because the target trust condition
+is unsatisfied. Supplying the configured identifier should succeed:
+
+```bash
+assume_caller "$CALLER_ROLE_ARN" Ex15FailureDCaller
+if aws sts assume-role \
+    --role-arn "$TARGET_EXTERNAL_ID_ROLE_ARN" \
+    --role-session-name Ex15FailureDWrong \
+    --external-id wrong-exercise15-value; then
+  echo "UNEXPECTED: Failure D was allowed with the wrong ExternalId"
+else
+  echo "Expected AccessDenied: sts:ExternalId condition did not match"
+fi
+
+aws sts assume-role \
+  --role-arn "$TARGET_EXTERNAL_ID_ROLE_ARN" \
+  --role-session-name Ex15FailureDCorrect \
+  --external-id "$EXTERNAL_ID"
+```
+
+### Failure E — trust-policy PrincipalArn condition mismatch
+
+The target trust policy names the working caller but requires an intentionally
+unmatched `aws:PrincipalArn` pattern. Identity permission and the trust
+principal therefore pass, while only the condition fails:
+
+```bash
+assume_caller "$CALLER_ROLE_ARN" Ex15FailureECaller
+if aws sts assume-role --role-arn "$TARGET_CONDITION_ROLE_ARN" --role-session-name Ex15FailureE; then
+  echo "UNEXPECTED: Failure E was allowed"
+else
+  echo "Expected AccessDenied: trust aws:PrincipalArn condition did not match"
+fi
+```
+
+For each denial, inspect the corresponding STS CloudTrail event in the source
+and target accounts before proceeding. Keep the evidence table fields:
+caller, action, resource, expected result, actual result, CloudTrail event ID,
+and the policy layer that explains it.
 
 ```mermaid
 sequenceDiagram
@@ -241,36 +381,116 @@ have been documented.
 ## Investigating in the Console
 
 Use IAM Identity Center access-portal sessions, not IAM user keys. Verify the
-account ID in the console account menu before inspecting anything.
+account ID in the console account menu before inspecting anything. This
+exercise uses three sessions/accounts: the Dev Lab source account, the Test
+Lab target account, and the Organizations management account for the optional
+SCP only.
 
-1. Open **IAM** and inspect the exercise role under `/week2/exercise15/`.
-2. Review its trust relationship, identity policies, tags, and permissions
-   boundary where present.
-3. Open the relevant resource service and verify the resource ARN, tags,
-   ownership controls, or resource policy.
-4. In **CloudTrail → Event history**, filter for the API action under test and
-   compare the principal, resource, request parameters, and error code.
-5. From an approved management-account session, inspect inherited SCPs without
-   modifying them.
+### Dev Lab source account
+
+1. In **IAM → Roles**, search for the three roles under
+   `/week2/exercise15/`: `Ex15CallerRole`,
+   `Ex15CallerWithoutAssumeRole`, and `Ex15UntrustedCallerRole`.
+2. For `Ex15CallerRole` and `Ex15UntrustedCallerRole`, confirm the inline
+   `Exercise15AssumeTargets` policy allows only `sts:AssumeRole` on the three
+   Test Lab target-role ARNs and `sts:GetCallerIdentity`.
+3. For `Ex15CallerWithoutAssumeRole`, confirm `Exercise15Policy` contains no
+   `sts:AssumeRole` Allow. This is the evidence for Failure A.
+4. For each source role, confirm the trust relationship allows the
+   `AWSReservedSSO_WorkloadLabAdministrator_*` operator pattern and that the
+   `/week2/WorkloadLabRoleBoundary` permissions boundary is attached.
+
+### Test Lab target account
+
+1. Inspect `Ex15TargetRole`, `Ex15ExternalIdTargetRole`, and
+   `Ex15ConditionTargetRole` under `/week2/exercise15/`.
+2. Compare their trust relationships: the baseline target trusts only
+   `Ex15CallerRole`; the ExternalId target adds
+   `StringEquals sts:ExternalId`; and the condition target adds the
+   intentionally unmatched `aws:PrincipalArn` pattern.
+3. Confirm all three target roles have the target-account
+   `/week2/WorkloadLabRoleBoundary` and the minimal
+   `sts:GetCallerIdentity` probe policy.
+4. In **CloudTrail → Event history**, filter for `AssumeRole`, select the
+   failure's time range, and compare the principal ARN, target role ARN,
+   `externalId` request parameter when applicable, and error code. Failure B,
+   D, and E should be investigated against the target trust configuration.
+
+### Organizations management account
+
+When testing Failure C, inspect **AWS Organizations → Policies → Service
+control policies** from the management-account session. Confirm
+`Week2Exercise15DenyAssumeRole` is attached directly to the Dev Lab
+`source_account_id`, contains only `sts:AssumeRole`, and is resource-scoped to
+the three Exercise 15 target-role ARNs. Do not edit any existing SCP or attach
+the fixture to the target, management, or an OU. After the recovery apply,
+confirm the fixture policy and attachment are gone.
+
+For every test, correlate the console view with the Terraform outputs and the
+CloudTrail event. Source-account STS events are the primary place to inspect a
+source identity-policy denial (Failure A); target-account events are the
+primary place to inspect trust and condition denials (Failures B, D, and E).
+The management account records the Organizations policy and attachment changes
+for Failure C, while the blocked AssumeRole request itself should be checked in
+both lab accounts.
 
 Console list pages can require permissions outside a deliberately narrow lab
-role. An `AccessDenied` from a page is not evidence that the security policy
-should be broadened; use a read-only inspection session or the CLI instead.
+role. An `AccessDenied` from a page is not evidence that the Exercise 15
+security policy should be broadened; use a read-only inspection session or the
+CLI instead.
 
 ## Evidence and security analysis
 
-Record the exact expected decision before each test. Explain the result using
-this order:
+Before each Exercise 15 command, record the predicted matrix values:
+`source identity Allow`, `target trust Allow`, `SCP permits`, `trust conditions
+satisfied`, and the resulting Allow or Deny. Use this expected matrix before
+running the commands:
+
+| Test | Source identity Allow | Target trusts caller | SCP permits | Conditions satisfied | Expected result | Isolated layer |
+|---|---:|---:|---:|---:|---|---|
+| Baseline → `Ex15TargetRole` | Yes | Yes | Yes | Yes | Allow | None; positive control |
+| Failure A → `Ex15CallerWithoutAssumeRole` | No | Yes | Yes | Yes | Deny | Source identity policy |
+| Failure B → `Ex15UntrustedCallerRole` | Yes | No | Yes | N/A | Deny | Target trust principal |
+| Failure C → `Ex15TargetRole` with SCP enabled | Yes | Yes | No | Yes | Deny | Source-account SCP |
+| Failure D → `Ex15ExternalIdTargetRole` with wrong/missing value | Yes | Yes | Yes | No | Deny | `sts:ExternalId` condition |
+| Failure D recovery → same role with correct value | Yes | Yes | Yes | Yes | Allow | Positive control for ExternalId |
+| Failure E → `Ex15ConditionTargetRole` | Yes | Yes | Yes | No | Deny | `aws:PrincipalArn` condition |
+
+Then record the actual caller ARN, target role ARN, session name, request
+parameters (including whether an ExternalId was supplied), error code, and
+CloudTrail event ID. The target role's `sts:GetCallerIdentity` policy is only
+relevant after a successful assumption; it does not make a denied
+`sts:AssumeRole` request succeed.
+
+Explain each result using this order:
 
 ```text
 Explicit deny → SCP/RCP → identity policy → boundary/session policy
              → resource/trust policy → conditions → effective result
 ```
 
-Discuss the attack or failure mode tested, what would happen if a security
-attribute or policy were mutable, and the compensating control required in
-production. CloudTrail evidence is historical and must not be treated as proof
-that an unused permission can never be needed.
+Use the following attribution when the evidence supports it: Failure A is the
+source identity-policy layer; Failure B is the target trust principal layer;
+Failure C is the source-account SCP explicit-deny layer; Failure D is the
+`sts:ExternalId` trust condition; and Failure E is the target
+`aws:PrincipalArn` trust condition. Compare every failure with the baseline so
+that only the intended matrix input changes. In particular, do not attribute
+Failure B to the source policy—the untrusted caller has the same
+`sts:AssumeRole` Allow as the working caller—and do not attribute Failure E to
+role naming alone—the caller role is already the trusted principal, but fails
+the additional condition.
+
+For the security analysis, explain the production control demonstrated by each
+fixture: least-privilege identity policies for Failure A, precise role
+principals instead of broad account trust for Failure B, narrowly scoped SCP
+or other organization guardrails for Failure C, mandatory ExternalId values
+for third-party trust for Failure D, and reviewed condition changes for
+Failure E. Note that the SCP is intentionally attached only to the Dev Lab
+source account and resource-scoped to these three target roles; confirm that
+recovery removes it. Redact credentials and avoid recording ExternalId values
+as secrets, since this exercise treats the configured value as an identifier.
+CloudTrail evidence is historical and must not be treated as proof that an
+unused permission can never be needed.
 
 ## Clean up
 
