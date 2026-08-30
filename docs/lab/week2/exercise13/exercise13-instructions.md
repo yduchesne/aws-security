@@ -85,7 +85,8 @@ trust remains separate from the SCP policy layer under test.
 
 ### Policy/resource excerpt
 
-The generic fixture illustrates the intentionally narrow starting point:
+The exercise role's inline policy contains the identity Allow tested by this
+exercise:
 
 ```hcl
 resource "aws_iam_role_policy" "exercise" {
@@ -93,32 +94,49 @@ resource "aws_iam_role_policy" "exercise" {
   name = "Exercise13Policy"
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["sts:GetCallerIdentity"]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid      = "IdentityVerification"
+        Effect   = "Allow"
+        Action   = ["sts:GetCallerIdentity"]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowExercise13BucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketLocation",
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+        ]
+        Resource = [
+          aws_s3_bucket.exercise.arn,
+          "${aws_s3_bucket.exercise.arn}/*",
+        ]
+      },
+    ]
   })
 }
 ```
 
-For the exercise-specific policy, inspect [`main.tf`](../../../../terraform/lab/week2/exercise13/main.tf) before applying and record
-its principal, actions, resources, conditions, and any explicit denies. A
-permissions boundary is a maximum, not a grant; a resource policy or trust
+The role itself is trusted separately by an account-root principal constrained
+with `aws:PrincipalArn` to the `AWSReservedSSO_WorkloadLabAdministrator_*`
+role path. The policy has no explicit Deny: `s3:PutObject` is intentionally
+allowed here so that the account-level SCP can provide the contrasting deny.
+A permissions boundary is a maximum, not a grant; a resource policy or trust
 policy is not a substitute for an identity Allow.
 
 #### Policy/resource analysis
 
-This excerpt is the identity policy associated with the exercise role. Its
-principal is the role itself, and its only Allow is the harmless
-`sts:GetCallerIdentity` action on all resources. It is intended to permit
-identity verification, not access to arbitrary workload resources. It does not
-trust any principal; trust is defined separately by the role's assume-role
-policy. It intentionally contains no explicit Deny, so the absence of an Allow
-for other actions produces an implicit deny. The wildcard resource is a weak
-point for readability, although this identity-verification action does not
-provide a narrower resource scope. Always compare this excerpt with the role
-trust policy and the complete declaration in [`main.tf`](../../../../terraform/lab/week2/exercise13/main.tf).
+The inline policy is attached to the exercise role, so its principal is that
+role's session. It allows identity verification and four S3 actions only on the
+exercise bucket and its objects. The bucket actions are deliberately narrower
+than the full boundary ceiling. In particular, the identity policy continues
+to allow `s3:PutObject` when the SCP is enabled; the SCP is the policy layer
+that changes the result. Always compare this excerpt with the role trust
+policy, permissions boundary, and the complete declaration in
+[`main.tf`](../../../../terraform/lab/week2/exercise13/main.tf).
 
 ### Permissions-boundary excerpt
 
@@ -194,8 +212,16 @@ bounded roles.
 
 Authenticate both the configured Dev Lab IAM Identity Center profile and the approved Organizations management-account profile. The source session creates the role and bucket; the management session is required to read and manage the exercise SCP. See [`sso_auth.md`](../../../sso_auth.md) for user enablement, MFA, browser isolation, and CLI login guidance. Never use the bounded lab permission set for Organizations administration.
 
+If the management profile is IAM Identity Center-backed, log it in separately;
+if it is the approved temporary `ct-bootstrap` profile, use its already
+configured short-lived or otherwise approved credentials instead. Never copy
+credentials into this exercise or use the source profile for Organizations
+administration.
+
 ```bash
 aws sso login --profile "$TF_VAR_source_aws_profile" --use-device-code --no-browser
+# Run this too when the management profile uses IAM Identity Center:
+# aws sso login --profile "$TF_VAR_management_aws_profile" --use-device-code --no-browser
 aws sts get-caller-identity --profile "$TF_VAR_source_aws_profile"
 aws sts get-caller-identity --profile "$TF_VAR_management_aws_profile"
 test "$(aws sts get-caller-identity --profile "$TF_VAR_source_aws_profile" --query Account --output text)" = "$TF_VAR_source_account_id"
@@ -242,7 +268,7 @@ For Exercise 13, the central comparison is: **Show an scp explicit deny overridi
 not add permissions until the current policy evaluation and CloudTrail evidence
 have been documented.
 
-## Execute the experiment
+## Detailed test procedure
 
 ### Load the exact identifiers first
 
