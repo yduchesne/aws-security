@@ -482,8 +482,9 @@ See [`identity_center_security.md`](identity_center_security.md) for the detaile
 | `WorkloadProductionOperators` | `WorkloadProductionOperator` | Approved Prod accounts only |
 | `WorkloadLabAdministrators` | `WorkloadLabAdministrator` | Explicitly allowlisted Dev Lab and Test Lab accounts only |
 
-`WorkloadLabAdministrator` permits bounded Week 2 IAM, S3, STS, and narrowly
-scoped Exercise 8 EC2 lab work.
+`WorkloadLabAdministrator` permits bounded Week 2 IAM, S3 (including named
+bucket-policy management), STS, and the fixed Exercise 10 Access Analyzer,
+plus narrowly scoped Exercise 8 EC2 lab work.
 Every role it creates must use the pre-provisioned `WorkloadLabRoleBoundary`;
 the persona cannot create, alter, replace, or remove that ceiling. Trusted
 baseline automation owns the boundary policy in each lab account.
