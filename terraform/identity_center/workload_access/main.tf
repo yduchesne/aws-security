@@ -199,10 +199,16 @@ locals {
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*",
     "arn:${data.aws_partition.current.partition}:s3:::${var.lab_bucket_name_prefix}*/*",
   ]
-  lab_exercise10_analyzer_arns = [
-    for account_id in local.lab_account_ids :
-    "arn:${data.aws_partition.current.partition}:access-analyzer:*:${account_id}:analyzer/Week2Exercise10Analyzer"
+  lab_exercise_analyzer_names = [
+    "Week2Exercise10Analyzer",
+    "Week2Exercise12Analyzer",
   ]
+  lab_exercise_analyzer_arns = flatten([
+    for account_id in local.lab_account_ids : [
+      for analyzer_name in local.lab_exercise_analyzer_names :
+      "arn:${data.aws_partition.current.partition}:access-analyzer:*:${account_id}:analyzer/${analyzer_name}"
+    ]
+  ])
   lab_evidence_bucket_name = "aws-security-lab-evidence-${var.management_account_id}"
   lab_evidence_bucket_arn  = "arn:${data.aws_partition.current.partition}:s3:::${local.lab_evidence_bucket_name}"
   lab_evidence_prefixes = [
@@ -519,7 +525,7 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = "*"
       },
       {
-        Sid    = "ReadExercise10AccessAnalyzer"
+        Sid    = "ReadExerciseAccessAnalyzers"
         Effect = "Allow"
         Action = [
           "access-analyzer:GetAnalyzer",
@@ -528,10 +534,10 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
           "access-analyzer:ListFindings",
           "access-analyzer:ListTagsForResource",
         ]
-        Resource = local.lab_exercise10_analyzer_arns
+        Resource = local.lab_exercise_analyzer_arns
       },
       {
-        Sid    = "ListExercise10AccessAnalyzers"
+        Sid    = "ListExerciseAccessAnalyzers"
         Effect = "Allow"
         Action = [
           "access-analyzer:ListAnalyzers",
@@ -539,7 +545,7 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = "*"
       },
       {
-        Sid    = "ManageExercise10AccessAnalyzer"
+        Sid    = "ManageExerciseAccessAnalyzers"
         Effect = "Allow"
         Action = [
           "access-analyzer:CreateAnalyzer",
@@ -547,12 +553,12 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "aws:RequestTag/Name" = "Week2Exercise10Analyzer"
+            "aws:RequestTag/Name" = local.lab_exercise_analyzer_names
           }
         }
       },
       {
-        Sid    = "ManageExercise10AccessAnalyzerResource"
+        Sid    = "ManageExerciseAccessAnalyzersResource"
         Effect = "Allow"
         Action = [
           "access-analyzer:DeleteAnalyzer",
@@ -560,7 +566,7 @@ resource "aws_ssoadmin_permission_set_inline_policy" "lab_administrator" {
           "access-analyzer:TagResource",
           "access-analyzer:UntagResource",
         ]
-        Resource = local.lab_exercise10_analyzer_arns
+        Resource = local.lab_exercise_analyzer_arns
       },
       {
         Sid    = "AllowAccessAnalyzerServiceLinkedRole"
