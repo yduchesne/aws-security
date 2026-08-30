@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "allow",
+      "Action": "s3:*",
+      "Resource": "arn:aws:s3:::aws-security-week2-lab-*"
+    }
+  ],
+  "MisspelledElement": "value"
+}
