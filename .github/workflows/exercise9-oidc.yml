@@ -1,0 +1,41 @@
+name: Exercise 9 GitHub OIDC
+
+on:
+  push:
+    branches:
+      - dev/oidc/main # Must match refs/heads/<branch> in TF_VAR_oidc_subject.
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  oidc-positive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.EXERCISE9_ROLE_ARN }}
+          aws-region: us-east-2
+          role-session-name: exercise9-github-positive
+
+      - name: Verify the federated identity
+        run: aws sts get-caller-identity --no-cli-pager
+
+      - name: Verify role variable is configured
+        shell: bash
+        env:
+          EXERCISE9_ROLE_ARN: ${{ vars.EXERCISE9_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          test -n "$EXERCISE9_ROLE_ARN"
+          case "$EXERCISE9_ROLE_ARN" in
+            arn:aws:iam::*:role/*) ;;
+            *) echo "EXERCISE9_ROLE_ARN is not a valid IAM role ARN" >&2; exit 1 ;;
+          esac
+          echo "EXERCISE9_ROLE_ARN is configured"        
