@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXERCISE9_ROLE_ARN"
-          echo "Role: $EXERCISE9_ROLE_ARN"
+          echo "--- Role: $EXERCISE9_ROLE_ARN ---"
           case "$EXERCISE9_ROLE_ARN" in
             arn:aws:iam::*:role/*) ;;
             *) echo "EXERCISE9_ROLE_ARN is not a valid IAM role ARN" >&2; exit 1 ;;
